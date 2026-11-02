@@ -1,6 +1,6 @@
 # Drittanbieterkomponenten
 
-FokusWache verwendet die folgenden Komponenten. Die Rechtevorbehalte für den eigenen Projektcode ersetzen deren Lizenzen nicht.
+FokusWache verwendet die folgenden Komponenten. Die MIT-Lizenz des eigenen Projektcodes ersetzt deren jeweilige Lizenzen nicht.
 
 | Komponente | Verwendung | Lizenzinformationen |
 |---|---|---|

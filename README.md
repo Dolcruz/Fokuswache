@@ -12,6 +12,7 @@ Mit Zeitbudgets, Wochenplänen und einem persönlichen Tagebuch – lokal auf de
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%2F%2011-217a63?style=flat-square)
 ![Lokal](https://img.shields.io/badge/Daten-lokal-217a63?style=flat-square)
 ![Python / Qt](https://img.shields.io/badge/Python-Qt%206-4b6584?style=flat-square)
+[![MIT License](https://img.shields.io/badge/License-MIT-217a63?style=flat-square)](LICENSE)
 
 [Loslegen](#loslegen) · [Funktionen](#was-fokuswache-kann) · [Tagebuch](#dein-tag-festgehalten) · [Anleitung](docs/Installation.md)
 
@@ -104,8 +105,8 @@ Python, PySide6/Qt, pywin32, psutil und eine JavaScript-Erweiterung. Die Regeln 
 
 Der Testlauf nutzt temporäre Nutzerdaten und Qt ohne sichtbares Fenster. Er installiert keinen Dienst und löst keine realen Sperren aus. [Projektaufbau und Build →](docs/Entwicklung.md)
 
-## Rechte und Drittanbieter
+## Lizenz und Drittanbieter
 
-© 2026 Falk Pfisterer. Alle Rechte am eigenen Quellcode und den eigenen Projektinhalten vorbehalten. Die Veröffentlichung erteilt derzeit keine Open-Source-Lizenz. Für eine weitergehende Nutzung oder kommerzielle Lizenzierung: [Kontakt](mailto:pfistererfalk@gmail.com).
+FokusWache steht unter der [MIT-Lizenz](LICENSE). Du darfst den Code frei verwenden, verändern und weitergeben, auch kommerziell. Der Copyright- und Lizenzhinweis muss dabei erhalten bleiben.
 
 Drittanbieterkomponenten behalten ihre jeweiligen Lizenzen. Insbesondere werden Qt und PySide6 unter ihren eigenen Lizenzbedingungen verwendet. [Komponenten und Lizenzquellen →](docs/Drittanbieter.md)
