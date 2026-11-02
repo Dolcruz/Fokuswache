@@ -25,7 +25,7 @@ def package(version):
     cache = ROOT / 'build/sources'
     cache.mkdir(parents=True, exist_ok=True)
     sources = json.loads((ROOT / 'installer/sources.json').read_text('utf-8'))
-    notices = re.compile(r'license|copying|copyright|notice|readme|ftl\.', re.I)
+    notices = re.compile(r'license|copying|copyright|notice|readme|ftl\.|qt_attribution', re.I)
     for source in sources:
         archive = cache / source['filename']
         if not archive.exists():

@@ -18,7 +18,7 @@
 
 ## Umgebung und Build
 
-Verwende CPython 3.12 auf Windows und eine eigene virtuelle Umgebung. Die direkten Abhängigkeiten sind in `requirements.txt` auf konkrete Versionen festgelegt. Pip löst deren transitive Abhängigkeiten auf; es wird kein bitidentischer Build zugesichert.
+Die Windows-Release-Ausgabe wird mit CPython 3.12.10 auf Windows und einer eigenen virtuellen Umgebung gebaut. Die direkten Abhängigkeiten sind in `requirements.txt` auf konkrete Versionen festgelegt. Pip löst deren transitive Abhängigkeiten auf; es wird kein bitidentischer Build zugesichert.
 
 ```powershell
 py -3.12 -m venv .venv

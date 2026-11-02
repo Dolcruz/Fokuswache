@@ -18,5 +18,25 @@
     "filename": "pywin32-312.tar.gz",
     "url": "https://codeload.github.com/mhammond/pywin32/tar.gz/refs/tags/b312",
     "sha256": "71d959a9f18cf86001e5dca1e30d5046c187eabbb08112cb6ff01e04689f6f7b"
+  },
+  {
+    "filename": "CPython-3.12.10.tar.gz",
+    "url": "https://codeload.github.com/python/cpython/tar.gz/refs/tags/v3.12.10",
+    "sha256": "6909b15f0363a203a30c8c84ec411d70d263e6ac5b52db4bc06fa86d2649ba8e"
+  },
+  {
+    "filename": "OpenSSL-3.0.16.tar.gz",
+    "url": "https://codeload.github.com/openssl/openssl/tar.gz/refs/tags/openssl-3.0.16",
+    "sha256": "9642aa3d97ac37da45dadabb3b576f399016acdb1df5d0e2751733e1cdf9f328"
+  },
+  {
+    "filename": "Tcl-8.6.15.tar.gz",
+    "url": "https://codeload.github.com/tcltk/tcl/tar.gz/refs/tags/core-8-6-15",
+    "sha256": "26ec488cef5b9cd71a3290c257e40c2157fc258cad248f71404db56db8a016d1"
+  },
+  {
+    "filename": "Tk-8.6.15.tar.gz",
+    "url": "https://codeload.github.com/tcltk/tk/tar.gz/refs/tags/core-8-6-15",
+    "sha256": "60b345a44d8070a8b64a0bb9c24263f1a82288e945d5bd7f91df43070abc442a"
   }
 ]

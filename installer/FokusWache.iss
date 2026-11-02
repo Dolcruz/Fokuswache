@@ -55,6 +55,9 @@ Name: "{commondesktop}\FokusWache"; Filename: "{app}\FokusWache.exe"; WorkingDir
 [Run]
 Filename: "{app}\FokusWache.exe"; Description: "FokusWache öffnen"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
+[InstallDelete]
+Type: files; Name: "{app}\Deinstallieren.ps1"
+
 [UninstallDelete]
 Type: files; Name: "{app}\native-chromium.json"
 Type: files; Name: "{app}\native-firefox.json"

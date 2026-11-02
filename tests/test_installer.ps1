@@ -61,15 +61,18 @@ Assert-True (-not $uiProcess.HasExited) 'Installed Qt interface remains running'
 Invoke-Package $SetupPath 'running-window' $false
 $uiProcess.Refresh()
 Assert-True (-not $uiProcess.HasExited) 'Rejected update preserves the open application'
-[void]$uiProcess.CloseMainWindow()
-$uiProcess.WaitForExit()
+& python (Join-Path $PSScriptRoot 'close_installed_window.py') $uiProcess.Id
+if ($LASTEXITCODE -ne 0) { throw 'The installed application window could not be closed normally.' }
+Assert-True ($uiProcess.WaitForExit(20000)) 'Installed Qt interface exits after its normal close request'
 $journal = Join-Path $env:LOCALAPPDATA 'FokusWache\zeitprotokoll.sqlite3'
 Assert-True (Test-Path -LiteralPath $journal) 'Installed interface creates its local journal'
 $journalHash = (Get-FileHash -LiteralPath $journal).Hash
 
 $rule = @{id='installer-regression';name='Installation test';kind='apps';targets=@('C:\Games\FokusWache-Test\example.exe');enabled=$true;daily_minutes=60}
 [void](Request-Service @{op='save';rule=$rule})
+'Retired application component' | Set-Content -LiteralPath (Join-Path $installRoot 'Deinstallieren.ps1')
 Invoke-Package $SetupPath 'update' $true
+Assert-True (-not (Test-Path -LiteralPath (Join-Path $installRoot 'Deinstallieren.ps1'))) 'Update retires the previous manual uninstaller'
 $status = Request-Service @{op='status'}
 Assert-True (@($status.rules | Where-Object id -EQ 'installer-regression').Count -eq 1) 'Update preserves the saved rule'
 Assert-True ((Get-FileHash -LiteralPath $journal).Hash -eq $journalHash) 'Update preserves the journal bytes'
@@ -89,7 +92,19 @@ Stop-Service FokusWache
 $stateFile = Join-Path $dataRoot 'state.json'
 $state = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
 ($state.rules | Where-Object id -EQ 'installer-regression').locked_until = $null
-$state | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $stateFile -Encoding UTF8
+[IO.File]::WriteAllText($stateFile, ($state | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+Start-Service FokusWache
+(Get-Service FokusWache).WaitForStatus('Running', [TimeSpan]::FromSeconds(20))
+
+Stop-Service FokusWache
+(Get-Service FokusWache).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(15))
+$savedState = [IO.File]::ReadAllBytes($stateFile)
+$binaryHash = (Get-FileHash -LiteralPath (Join-Path $installRoot 'FokusWache.exe')).Hash
+[IO.File]::WriteAllText($stateFile, 'broken')
+Invoke-Package $SetupPath 'corrupt-state' $false
+Assert-True ((Get-Content -LiteralPath $stateFile -Raw) -eq 'broken') 'Rejected installation preserves unreadable state for recovery'
+Assert-True ((Get-FileHash -LiteralPath (Join-Path $installRoot 'FokusWache.exe')).Hash -eq $binaryHash) 'Rejected installation preserves the installed binary'
+[IO.File]::WriteAllBytes($stateFile, $savedState)
 Start-Service FokusWache
 (Get-Service FokusWache).WaitForStatus('Running', [TimeSpan]::FromSeconds(20))
 
