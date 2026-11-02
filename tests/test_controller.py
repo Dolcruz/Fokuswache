@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from service import Controller
 from engine import UTC
@@ -34,11 +35,14 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(p.read_text(),'broken')
 
     def test_real_tick_does_not_enforce_in_test_mode(self):
-        with tempfile.TemporaryDirectory() as folder:
-            c=Controller(folder,enforce=False);c.tick(None)
-            self.assertEqual(c.errors,[])
-            self.assertTrue(all(not r['enabled'] for r in c.engine.state['rules']))
-            self.assertGreater(len(c.games),0)
+        for games in ([], [dict(name='Example',path=r'C:\Games\Example',launcher='Steam')]):
+            with self.subTest(games=games), tempfile.TemporaryDirectory() as folder, \
+                 patch('service.installed_games',return_value=games), patch('service.terminate') as terminate:
+                c=Controller(folder,enforce=False);c.tick(None)
+                self.assertEqual(c.errors,[])
+                self.assertTrue(all(not r['enabled'] for r in c.engine.state['rules']))
+                self.assertEqual(c.games,games)
+                terminate.assert_not_called()
 
     def test_browser_pulse_requires_browser_parent(self):
         import os
