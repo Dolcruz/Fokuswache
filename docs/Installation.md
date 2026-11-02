@@ -3,15 +3,14 @@
 ## Voraussetzungen
 
 - Windows 10 oder Windows 11, 64 Bit
-- Python 3.12 und Git für den Eigenbau
 - Administratorrechte für Installation, Updates und Entfernung des Dienstes
-- Internet für den einmaligen Download der Python-Abhängigkeiten; die Anwendung selbst arbeitet lokal
+- Internet für den Download des Installers; die Anwendung selbst arbeitet lokal
 
-## Aus dem Quellcode
+## Windows-Setup
 
-Die Schritte aus der [README](../README.md#loslegen) erzeugen `app/FokusWache.exe` und `app/FokusWacheNative.exe`. Der gesamte Ordner `app` wird benötigt; die EXE ist keine alleinstehende portable Anwendung.
+Lade **FokusWache-Setup-1.0.0-x64.exe** aus den [Releases](https://github.com/Dolcruz/Fokuswache/releases/latest) herunter und öffne sie. Python, Qt und die weiteren Laufzeitbibliotheken sind bereits enthalten. Das separate ThirdPartySources-Archiv wird für die normale Installation nicht benötigt.
 
-`Installieren.ps1` kopiert die Programme und Erweiterungen nach `%PROGRAMFILES%\FokusWache`, schützt Programm- und Regelordner mit Windows-Berechtigungen, registriert den automatisch startenden Dienst und legt Desktop- und Startmenüverknüpfungen an. Windows fragt nach einer Administratorbestätigung.
+Das Setup kopiert die Programme und Erweiterungen nach `%PROGRAMFILES%\FokusWache`, schützt Programm- und Regelordner mit Windows-Berechtigungen, registriert den automatisch startenden Dienst und legt einen Startmenüeintrag an. Ein Desktop-Symbol ist optional. Windows fragt nach einer Administratorbestätigung. Die Einrichtung ist auf den regulären 64-Bit-Programmordner beschränkt.
 
 Öffne anschließend FokusWache und lege zunächst eine kurze eigene Testregel an. Mitgelieferte Vorlagen aktivieren keine Sperre von selbst.
 
@@ -37,11 +36,11 @@ Diese Installation muss nach jedem Firefox-Neustart wiederholt werden. Eine daue
 
 ## Updates
 
-Baue den neuen Quellstand und führe `Aktualisieren.ps1` aus. Aktive Verriegelungen müssen vorher ablaufen. Das Skript ersetzt Programme und Erweiterungen nach Administratorbestätigung und startet den Dienst neu. Persönliche Regeln, Zeitkonten und Tagebucheinträge liegen außerhalb des Projektordners.
+Lade das neue Setup herunter, schließe das FokusWache-Fenster und führe die EXE aus. Aktive Verriegelungen müssen vorher ablaufen. Das Setup prüft dies vor dem Ersetzen von Programmdateien. Es beendet und startet den eigenen Dienst und seine Hintergrundkomponenten kontrolliert neu. Persönliche Regeln, Zeitkonten und Tagebucheinträge liegen außerhalb des Programmordners.
 
 ## Entfernen und sichern
 
-`Deinstallieren.ps1` entfernt nach Ablauf der Verriegelungen den Dienst, die zugehörigen Firewall-Regeln, Native-Messaging-Registrierungen und Verknüpfungen. Programmdateien und gespeicherte Daten bleiben bewusst erhalten. Entferne die Browser-Erweiterung zusätzlich in den verwendeten Browserprofilen.
+Öffne **Windows-Einstellungen → Apps → Installierte Apps → FokusWache → Deinstallieren**. Schließe vorher das FokusWache-Fenster und lass aktive Verriegelungen ablaufen. Die Deinstallation entfernt Dienst, zugehörige Firewall-Regeln, Native-Messaging-Registrierungen, Verknüpfungen und die vom Setup installierten Programmdateien. Regeln, Zeitkonten, Tagebucheinträge und eigene zusätzlich im Programmordner abgelegte Dateien bleiben erhalten. Entferne die Browser-Erweiterung zusätzlich in den verwendeten Browserprofilen.
 
 Für eine Tagebuchsicherung schließe FokusWache und kopiere `%LOCALAPPDATA%\FokusWache\zeitprotokoll.sqlite3`. Die Regel- und Zeitkontendaten liegen geschützt unter `%PROGRAMDATA%\FokusWache`; sie sind von der Tagebuchdatei unabhängig.
 
@@ -52,4 +51,4 @@ Für eine Tagebuchsicherung schließe FokusWache und kopiere `%LOCALAPPDATA%\Fok
 - **Ein Spiel wird nicht erkannt:** Ergänze die EXE oder den Spielordner in derselben Spieleregel. So bleibt das gemeinsame Tagesbudget erhalten.
 - **Änderung abgewiesen:** Prüfe die Verriegelungszeit. Aktive Verriegelungen schützen auch vor regulären Updates und Deinstallation.
 
-Die installierte Anwendung und selbst gebaute EXE-Dateien sind nicht digital signiert. Dieses Repository enthält derzeit keinen fertigen Windows-Installer zum Herunterladen.
+Das Setup und die Anwendung sind noch nicht digital signiert. Windows kann einen unbekannten Herausgeber oder eine SmartScreen-Meldung anzeigen. Vergleiche den Download bei Bedarf mit der Datei `SHA256SUMS.txt` aus demselben Release. [Eigenbau und Installationstests](Entwicklung.md) sind separat dokumentiert.

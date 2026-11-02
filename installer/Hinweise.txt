@@ -1,0 +1,14 @@
+FokusWache richtet einen automatisch startenden Windows-Dienst ein.
+Die Installation benötigt Administratorrechte und erfolgt unter Programme\FokusWache.
+
+Schließe vor einem Update das FokusWache-Fenster. Aktive Regelverriegelungen müssen
+vor Updates und Deinstallation ablaufen. Persönliche Regeln, Zeitkonten und das
+Tagebuch bleiben bei Updates und Deinstallation erhalten.
+
+Die Browser-Erweiterung wird mitgeliefert und muss pro Browserprofil zusätzlich
+verbunden werden. Die Anleitung liegt nach der Installation im Programmordner
+unter docs\Installation.md und ist im GitHub-Repository verfügbar.
+
+FokusWache verwendet Qt und PySide6 unter LGPLv3. Die Lizenztexte, Copyright-Hinweise
+und Quelleninformationen liegen im Programmordner unter licenses. Der eigene
+FokusWache-Quellcode steht unter der MIT-Lizenz.

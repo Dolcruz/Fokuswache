@@ -14,6 +14,8 @@ Mit Zeitbudgets, Wochenplänen und einem persönlichen Tagebuch – lokal auf de
 ![Python / Qt](https://img.shields.io/badge/Python-Qt%206-4b6584?style=flat-square)
 [![MIT License](https://img.shields.io/badge/License-MIT-217a63?style=flat-square)](LICENSE)
 
+[**Windows-Installer herunterladen**](https://github.com/Dolcruz/Fokuswache/releases/latest)
+
 [Loslegen](#loslegen) · [Funktionen](#was-fokuswache-kann) · [Tagebuch](#dein-tag-festgehalten) · [Anleitung](docs/Installation.md)
 
 </div>
@@ -59,18 +61,13 @@ Einträge ohne Uhrzeit bleiben Erinnerungen. Nur ausdrücklich eingetragene Zeit
 
 FokusWache ist für **Windows 10 und Windows 11, jeweils 64 Bit**, ausgelegt. Die Oberfläche ist auf Deutsch. Für Dienst, Firewall-Regeln und Browseranbindung benötigt die Installation Administratorrechte.
 
-Dieses Repository enthält den **Quellcode**. Für eine Installation baust du zuerst die Anwendung mit Python 3.12:
+1. Lade **`FokusWache-Setup-1.0.0-x64.exe`** aus den [GitHub-Releases](https://github.com/Dolcruz/Fokuswache/releases/latest) herunter.
+2. Öffne die EXE und bestätige die Windows-Administratorabfrage.
+3. Folge dem Setup und starte anschließend **FokusWache** über das Startmenü oder direkt am Ende der Installation.
 
-```powershell
-git clone https://github.com/Dolcruz/Fokuswache.git
-cd Fokuswache
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\Bauen.ps1 -Python .\.venv\Scripts\python.exe
-.\Installieren.ps1
-```
+Python und alle Laufzeitbibliotheken sind enthalten. Du brauchst keine Entwicklungswerkzeuge und kein Konto. Die mitgelieferten Regeln sind zunächst deaktiviert. Das Setup ist noch nicht digital signiert; Windows kann deshalb einen unbekannten Herausgeber oder eine SmartScreen-Meldung anzeigen. Prüfsummen stehen im Release in `SHA256SUMS.txt`.
 
-Falls PowerShell lokal gespeicherte Skripte nicht zulässt, kannst du die einzelnen Skripte ausdrücklich mit `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Bauen.ps1 -Python .\.venv\Scripts\python.exe` beziehungsweise `-File .\Installieren.ps1` aufrufen. Die Installation fragt die Windows-Administratorbestätigung ab. Anschließend startest du **FokusWache** über das Desktop- oder Startmenüsymbol. Die mitgelieferten Regeln sind zunächst deaktiviert.
+Updates installierst du mit demselben Setup. Schließe vorher das FokusWache-Fenster und lass aktive Verriegelungen ablaufen. Unter **Einstellungen → Apps → Installierte Apps → FokusWache** kannst du die Anwendung wieder entfernen. Regeln, Zeitkonten und Tagebuch bleiben erhalten.
 
 **Für Webregeln ist zusätzlich die Browser-Erweiterung erforderlich.** Sie wird pro Browserprofil installiert. [Browser verbinden und Installation im Detail →](docs/Installation.md)
 
@@ -109,4 +106,4 @@ Der Testlauf nutzt temporäre Nutzerdaten und Qt ohne sichtbares Fenster. Er ins
 
 FokusWache steht unter der [MIT-Lizenz](LICENSE). Du darfst den Code frei verwenden, verändern und weitergeben, auch kommerziell. Der Copyright- und Lizenzhinweis muss dabei erhalten bleiben.
 
-Drittanbieterkomponenten behalten ihre jeweiligen Lizenzen. Insbesondere werden Qt und PySide6 unter ihren eigenen Lizenzbedingungen verwendet. [Komponenten und Lizenzquellen →](docs/Drittanbieter.md)
+Drittanbieterkomponenten behalten ihre jeweiligen Lizenzen. Qt und PySide6 werden unter LGPLv3 verwendet. Lizenztexte und Hinweise werden mitinstalliert; die zugehörigen unveränderten Quellen stehen als separates Archiv im Release. [Komponenten und Lizenzquellen →](docs/Drittanbieter.md)

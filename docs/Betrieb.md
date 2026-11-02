@@ -48,10 +48,15 @@ Die Anwendung setzt keine feste Gesamtzahl von Regeln oder Tagebucheinträgen. Z
 ## Speicherung, Installation und Build
 
 - SQLite wartet bei einer gesperrten Tagebuchdatenbank **bis zu 5 Sekunden**. Danach schlägt der Zugriff mit einem Fehler fehl; Eingaben werden nicht als erfolgreich gespeichert dargestellt.
-- Der Installer wartet **20 Sekunden** auf den Zustand `Running`. Das Update wartet **15 Sekunden** auf `Stopped` und **20 Sekunden** auf den erneuten Start. Eine Überschreitung löst einen Fehler aus; sie bedeutet nicht automatisch, dass alle zuvor ausgeführten Installationsschritte zurückgerollt wurden.
+- Setup und Deinstallation warten **15 Sekunden** auf den Dienstzustand `Stopped`; beim Start wartet das Setup **20 Sekunden** auf `Running`. Eine Überschreitung löst einen Fehler aus; sie bedeutet nicht automatisch, dass alle zuvor ausgeführten Installationsschritte zurückgerollt wurden. Setup und Deinstallation schließen ein geöffnetes FokusWache-Fenster nicht automatisch; sie fordern vor Änderungen zum Schließen auf.
 - Die konfigurierte Windows-Dienstwiederherstellung setzt den Fehlerzähler nach **86.400 Sekunden** zurück und sieht Neustarts nach **2, 2 und anschließend 5 Sekunden** vor. Wiederholte Dienstfehler können so weitere Starts auslösen.
 - Paketdownloads verwenden die pip-Standardwerte: **15 Sekunden Netzwerk-Wartezeit, bis zu 5 Verbindungswiederholungen**. Nach Ausschöpfen bricht die Paketinstallation ab. Build und Tests setzen keine eigene gesamte Laufzeitfrist.
 - Firewall- und andere Windows-API-Aufrufe verwenden das Verhalten des Betriebssystems; das Projekt fügt ihnen keinen allgemeinen Aufruf-Timeout hinzu. Blockierende Aufrufe können den jeweiligen Thread belegen.
+- Der Installer verwendet **ZIP-Kompression auf Stufe 7 mit einem Komprimierungsthread**. Das beeinflusst Build-Last, Bauzeit und Paketgröße; die Nutzung der Anwendung wird nicht begrenzt.
+- Eine benannte Windows-Mutex erlaubt **genau einen Setup- oder Deinstallationsvorgang gleichzeitig pro Rechner**. Ein weiterer Start wird mit einer Meldung beendet; es gibt keine automatische Warteschlange oder Wiederholung.
+- Fehlende Drittanbieter-Quellarchive werden beim Paketbau **einmal ohne automatische Wiederholung und ohne eigene Netzwerk-Zeitgrenze** geladen. Bei einem Download- oder SHA-256-Fehler scheitert der Paketbau. Eine hängende Verbindung kann den Build weiter belegen. Bereits vorhandene, geprüfte Archive werden wiederverwendet. Die Archive werden im Quellpaket ohne erneute Komprimierung gespeichert.
+- Der GitHub-Windows-Job verwendet die Anbieter-Standardgrenze von **360 Minuten**. Danach beendet GitHub den Job. Setup- und Testartefakte bleiben **7 Tage** erhalten und werden danach automatisch gelöscht. Der Artefakttransport verwendet Kompressionsstufe **0**, weil das Setup und das Quellpaket bereits komprimierte Inhalte enthalten.
+- Im Installer-Integrationstest gilt für den Windows-Oberflächenstart eine Wartezeit von **20 Sekunden** bis zur Nachrichtenschleife. Danach schlägt der Test fehl. Die Testverriegelung läuft synthetisch **eine Stunde**; ihre administrative Aufhebung erfolgt ausschließlich auf dem kurzlebigen Testrechner. Es gibt keine zusätzliche Frist für Modellinferenz.
 
 ## Schutzumfang
 
