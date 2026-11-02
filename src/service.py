@@ -360,15 +360,40 @@ class FokusService(win32serviceutil.ServiceFramework):
     _svc_display_name_ = 'FokusWache Sperrdienst'
     _svc_description_ = 'Zentrale Zeitkonten und Sperrregeln von FokusWache.'
 
+    def __init__(self, args):
+        super().__init__(args)
+        self.stop_requested = threading.Event()
+        self.controller = None
+
     def SvcStop(self):
         # Service permissions reserve stop for administrators; an administrator remains able to repair Windows.
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-        self.ReportServiceStatus(win32service.SERVICE_STOPPED)
-        os._exit(0)
+        if self.controller is not None:
+            self.controller.stop.set()
+        self.stop_requested.set()
 
     def SvcDoRun(self):
         try:
-            Controller().serve()
+            self.controller = Controller()
+            failures = []
+
+            def serve():
+                try:
+                    self.controller.serve()
+                except Exception as error:
+                    failures.append(error)
+                finally:
+                    self.stop_requested.set()
+
+            # The SCM control handler must return before the process exits.
+            # Blocking pipe listeners are daemon threads and end with the host.
+            threading.Thread(target=serve, daemon=True).start()
+            self.stop_requested.wait()
+            self.controller.stop.set()
+            with self.controller.mutex:
+                self.controller.persist()
+            if failures:
+                raise failures[0]
         except Exception:
             DATA.mkdir(parents=True, exist_ok=True)
             (DATA / 'startup-error.log').write_text(traceback.format_exc(), encoding='utf-8')

@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory)][string]$SetupPath)
+﻿param([Parameter(Mandatory)][string]$SetupPath, [Parameter(Mandatory)][string]$InvalidSetupPath)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') {
     throw 'Dieser Integrationstest darf nur auf einem frischen GitHub-Windows-Runner laufen.'
@@ -76,6 +76,15 @@ Assert-True (-not (Test-Path -LiteralPath (Join-Path $installRoot 'Deinstalliere
 $status = Request-Service @{op='status'}
 Assert-True (@($status.rules | Where-Object id -EQ 'installer-regression').Count -eq 1) 'Update preserves the saved rule'
 Assert-True ((Get-FileHash -LiteralPath $journal).Hash -eq $journalHash) 'Update preserves the journal bytes'
+
+Invoke-Package (Resolve-Path -LiteralPath $InvalidSetupPath).Path 'configuration-failure' $false
+Invoke-Package $SetupPath 'repair-configuration' $true
+$status = Request-Service @{op='status'}
+Assert-True (@($status.rules | Where-Object id -EQ 'installer-regression').Count -eq 1) 'Repair preserves existing rules after a configuration failure'
+$failure = Start-Process -FilePath powershell.exe -ArgumentList ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'uninstall_failure.ps1') + '" -InstallRoot "' + $installRoot + '"') -WindowStyle Hidden -Wait -PassThru
+Assert-True ($failure.ExitCode -ne 0) 'Injected cleanup failure is reported'
+Assert-True ((Get-Service FokusWache).Status -eq 'Running') 'Failed cleanup restores the running service'
+Assert-True (Test-Path -LiteralPath (Join-Path $installRoot 'FokusWache.exe')) 'Failed cleanup preserves the application files'
 
 $uninstaller = (Get-ChildItem -LiteralPath $installRoot -Filter 'unins*.exe').FullName
 $mutex = New-Object Threading.Mutex($false, 'Global\FokusWache.Installer')

@@ -32,7 +32,9 @@ jobs:
         run: ./Paketieren.ps1
       - name: Installation, update and uninstallation tests
         shell: powershell
-        run: ./tests/test_installer.ps1 -SetupPath ./dist/FokusWache-Setup-1.0.0-x64.exe
+        run: |
+          ./tests/package_invalid_setup.ps1
+          ./tests/test_installer.ps1 -SetupPath ./dist/FokusWache-Setup-1.0.0-x64.exe -InvalidSetupPath ./build/invalid-setup/InvalidSetup.exe
       - name: Upload verified installer
         if: success()
         uses: actions/upload-artifact@v4

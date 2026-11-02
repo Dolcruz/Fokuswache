@@ -120,10 +120,27 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then begin
-    if not Lifecycle('Configure') then RaiseException(FailureText);
-    Configured := True;
+  if CurStep = ssPostInstall then
+    Configured := Lifecycle('Configure');
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  I: Integer;
+begin
+  if (CurPageID = wpFinished) and not Configured then begin
+    WizardForm.FinishedHeadingLabel.Caption := 'Windows-Einrichtung fehlgeschlagen';
+    WizardForm.FinishedLabel.Caption := FailureText + #13#10#13#10 +
+      'FokusWache wurde nicht vollständig eingerichtet. Du kannst das Setup erneut ausführen. Deine persönlichen Daten bleiben erhalten.';
+    for I := 0 to WizardForm.RunList.Items.Count - 1 do
+      WizardForm.RunList.Checked[I] := False;
+    WizardForm.RunList.Visible := False;
   end;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  if Configured then Result := 0 else Result := 1;
 end;
 
 procedure DeinitializeSetup;

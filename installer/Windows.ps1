@@ -91,8 +91,12 @@ function Prepare-Installation {
         $service = Get-Service -Name FokusWache -ErrorAction SilentlyContinue
         if ($service) {
             Set-Service FokusWache -StartupType Disabled
-            if ($service.Status -ne 'Stopped') { Stop-Service FokusWache }
-            (Get-Service FokusWache).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(15))
+            if ($service.Status -ne 'Stopped') {
+                & $sc stop FokusWache | Out-Null
+                $stopCode = $LASTEXITCODE
+                try { (Get-Service FokusWache).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(15)) }
+                catch { throw "Windows hat den Dienststopp nicht bestätigt (sc.exe: $stopCode). $($_.Exception.Message)" }
+            }
             # Check again after stopping so a newly saved lock is not bypassed.
             Assert-Installation
         }
@@ -143,15 +147,21 @@ try {
         }
         'Uninstall' {
             Prepare-Installation
-            if (Get-Service FokusWache -ErrorAction SilentlyContinue) { Invoke-Sc @('delete','FokusWache') }
-            Get-NetFirewallRule -ErrorAction Stop |
-                Where-Object { $_.DisplayName -match '^FokusWache - (Gesamtnetz (ausgehend|eingehend)|Browser [a-f0-9]{16})$' } |
-                Remove-NetFirewallRule
-            # Only remove legacy shortcuts that point to this installation.
-            $shell = New-Object -ComObject WScript.Shell
-            foreach ($folder in @([Environment]::GetFolderPath('CommonDesktopDirectory'), (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'))) {
-                $shortcut = Join-Path $folder 'FokusWache.lnk'
-                if ((Test-Path -LiteralPath $shortcut) -and $shell.CreateShortcut($shortcut).TargetPath -ieq (Join-Path $InstallRoot 'FokusWache.exe')) { Remove-Item -LiteralPath $shortcut }
+            try {
+                Get-NetFirewallRule -ErrorAction Stop |
+                    Where-Object { $_.DisplayName -match '^FokusWache - (Gesamtnetz (ausgehend|eingehend)|Browser [a-f0-9]{16})$' } |
+                    Remove-NetFirewallRule
+                # Only remove legacy shortcuts that point to this installation.
+                $shell = New-Object -ComObject WScript.Shell
+                foreach ($folder in @([Environment]::GetFolderPath('CommonDesktopDirectory'), (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'))) {
+                    $shortcut = Join-Path $folder 'FokusWache.lnk'
+                    if ((Test-Path -LiteralPath $shortcut) -and $shell.CreateShortcut($shortcut).TargetPath -ieq (Join-Path $InstallRoot 'FokusWache.exe')) { Remove-Item -LiteralPath $shortcut }
+                }
+                if (Get-Service FokusWache -ErrorAction SilentlyContinue) { Invoke-Sc @('delete','FokusWache') }
+            } catch {
+                $failure = $_
+                Resume-Service
+                throw $failure
             }
         }
         'Resume' { Resume-Service }
