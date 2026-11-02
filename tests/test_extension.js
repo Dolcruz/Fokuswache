@@ -1,0 +1,23 @@
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+let dynamics = [], disconnected, listener;
+const noop=()=>{}, hook={addListener:noop};
+const api={runtime:{connectNative(){return {postMessage:noop,onMessage:{addListener(fn){listener=fn}},onDisconnect:{addListener(fn){disconnected=fn}}}},getURL:p=>'chrome-extension://test/'+p,onStartup:hook,onInstalled:hook},tabs:{onUpdated:hook,onActivated:hook,update:async()=>{}},windows:{onFocusChanged:hook,getAll:async()=>[]},declarativeNetRequest:{getDynamicRules:async()=>dynamics,updateDynamicRules:async p=>{dynamics=p.addRules}}};
+const context=vm.createContext({chrome:api,URL,console,setInterval:noop,Date});
+vm.runInContext(fs.readFileSync(require('path').join(__dirname,'../extensions/chromium/background.js'),'utf8'),context);
+const check=(s)=>vm.runInContext(s,context);
+(async()=>{
+assert(check("match('https://sub.x.com/a','x.com')"));
+assert(!check("match('https://notx.com/a','x.com')"));
+assert(!check("match('https://x.com.evil.org/a','x.com')"));
+assert(check("match('https://example.org/a','*')"));
+assert(!check("match('file:///C:/example.org','*')"));
+await check("applyRules([{id:'1',targets:['*'],exceptions:['example.org']},{id:'2',targets:['example.org/private'],exceptions:[]}])");
+assert.equal(dynamics.length,2);
+assert.equal(dynamics[0].condition.excludedRequestDomains[0],'example.org');
+assert.equal(dynamics[1].condition.excludedRequestDomains.length,0);
+assert(!check("denied('https://example.org/public')"));
+assert(check("denied('https://example.org/private')"));
+assert(check("denied('https://x.com/a')"));
+await check('applyRules([])');assert.equal(dynamics.length,0);
+console.log('Extension: domain boundaries, exceptions, deny dominance, dynamic rule removal passed.');
+})().catch(e=>{console.error(e);process.exitCode=1});

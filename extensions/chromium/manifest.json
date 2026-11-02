@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "FokusWache",
+  "version": "1.0.0",
+  "description": "Gemeinsame Zeitlimits und Websperren mit dem lokalen FokusWache-Dienst.",
+  "permissions": [
+    "tabs",
+    "nativeMessaging",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw1GPbT4hwZKELd0nJW/umi2OAQlnmkkS+mw7UWPBGIAwwBBlge8auLuVPq3opTpCbZ6ubi8rZqMkeXL6qRh/ai1GWZdDvZ5VRbCc4Gv+BTDbEZxClnkaB7Mw8KWOx1/FSW5XNFxgWypxdDk8wTMZ5AJyJqR8nrD3ZGB0iODvzJWwO4MR+qyKs/808CX6rB1nkmuiVjAVmV9E//usaUYesHT0aA2W0FvABOs8vkbnyMK0ayb39jsb6ph/ktmpVsqTUBE5vVfD38Hgf6b2O9P03YEjCuGwHQ19anlx67ShRjCuA2qTTe3Vir8I4CIQpsQd8EPzHrH3Hx5mbIlQlrkJdwIDAQAB",
+  "incognito": "not_allowed"
+}

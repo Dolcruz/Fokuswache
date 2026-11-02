@@ -1,0 +1,5 @@
+pyinstaller==6.19.0
+pywin32==312
+psutil==7.2.2
+tzdata==2026.3
+PySide6-Essentials==6.11.2
