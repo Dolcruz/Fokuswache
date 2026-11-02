@@ -136,9 +136,7 @@ try {
             & icacls.exe $dataRoot /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Regelordner konnte nicht geschützt werden.' }
             $command = '"' + (Join-Path $InstallRoot 'FokusWache.exe') + '" --service'
-            if (Get-Service FokusWache -ErrorAction SilentlyContinue) {
-                Invoke-Sc @('config','FokusWache','binPath=',$command,'start=','auto','obj=','LocalSystem')
-            } else {
+            if (-not (Get-Service FokusWache -ErrorAction SilentlyContinue)) {
                 New-Service -Name FokusWache -BinaryPathName $command -DisplayName 'FokusWache Sperrdienst' -Description 'Zentrale Zeitkonten und Sperrregeln.' -StartupType Automatic | Out-Null
             }
             Invoke-Sc @('failure','FokusWache','reset=','86400','actions=','restart/2000/restart/2000/restart/5000')
