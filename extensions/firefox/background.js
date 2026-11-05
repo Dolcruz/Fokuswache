@@ -61,6 +61,15 @@ function connect() {
     port.onDisconnect.addListener(() => { void api.runtime.lastError; port = null; ready = false; });
   } catch { port = null; ready = false; }
 }
+// Rules match scheme, host and path only. Without credentials, query, fragment and
+// non-web addresses (e.g. large data: URLs) a pulse stays far below the native host's
+// 512 KiB limit, and credentials cannot push the host past the service's URL cut-off.
+function address(url) {
+  try {
+    const u = new URL(url);
+    return ['http:', 'https:', 'ws:', 'wss:'].includes(u.protocol) ? (u.origin + u.pathname).slice(0, 2048) : '';
+  } catch { return ''; }
+}
 async function pulse() {
   if (busy) return;
   busy = true;
@@ -70,8 +79,8 @@ async function pulse() {
     const windows = await api.windows.getAll({populate:true,windowTypes:['normal','popup']});
     const focused = windows.find(w=>w.focused);
     const active = focused?.tabs?.find(t=>t.active);
-    const tabs = windows.flatMap(w=>w.tabs || []).map(t=>({id:t.id,url:t.url || t.pendingUrl || ''}));
-    port.postMessage({op:'pulse',tabs,focused:!!focused,active_url:active?.url || '',ready:ready && Date.now()-lastResponse<4000});
+    const tabs = windows.flatMap(w=>w.tabs || []).map(t=>({id:t.id,url:address(t.url || t.pendingUrl || '')}));
+    port.postMessage({op:'pulse',tabs,focused:!!focused,active_url:address(active?.url || ''),ready:ready && Date.now()-lastResponse<4000});
   } catch { ready = false; } finally { busy = false; }
 }
 api.tabs.onUpdated.addListener((id,change,tab)=> { if (change.url && denied(change.url)) closeDeniedTabs([id]); });

@@ -1,7 +1,7 @@
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
-let dynamics = [], disconnected, listener;
+let dynamics = [], disconnected, listener, posted = [], windows = [];
 const noop=()=>{}, hook={addListener:noop};
-const api={runtime:{connectNative(){return {postMessage:noop,onMessage:{addListener(fn){listener=fn}},onDisconnect:{addListener(fn){disconnected=fn}}}},getURL:p=>'chrome-extension://test/'+p,onStartup:hook,onInstalled:hook},tabs:{onUpdated:hook,onActivated:hook,update:async()=>{}},windows:{onFocusChanged:hook,getAll:async()=>[]},declarativeNetRequest:{getDynamicRules:async()=>dynamics,updateDynamicRules:async p=>{dynamics=p.addRules}}};
+const api={runtime:{connectNative(){return {postMessage:m=>posted.push(m),onMessage:{addListener(fn){listener=fn}},onDisconnect:{addListener(fn){disconnected=fn}}}},getURL:p=>'chrome-extension://test/'+p,onStartup:hook,onInstalled:hook},tabs:{onUpdated:hook,onActivated:hook,update:async()=>{}},windows:{onFocusChanged:hook,getAll:async()=>windows},declarativeNetRequest:{getDynamicRules:async()=>dynamics,updateDynamicRules:async p=>{dynamics=p.addRules}}};
 const context=vm.createContext({chrome:api,URL,console,setInterval:noop,Date});
 vm.runInContext(fs.readFileSync(require('path').join(__dirname,'../extensions/chromium/background.js'),'utf8'),context);
 const check=(s)=>vm.runInContext(s,context);
@@ -28,5 +28,13 @@ assert(!check("denied('https://example.org/public')"));
 assert(check("denied('https://example.org/private')"));
 assert(check("denied('https://x.com/a')"));
 await check('applyRules([])');assert.equal(dynamics.length,0);
-console.log('Extension: domain boundaries, exceptions, deny dominance, dynamic rule removal passed.');
+// The native host drops pulses above 512 KiB and the service keeps only 8192 characters per URL.
+windows=[{focused:true,tabs:[{id:1,active:true,url:'https://'+'u'.repeat(9000)+'@x.com/home?q='+'q'.repeat(9000)},
+  {id:2,url:'data:image/png;base64,'+'A'.repeat(600*1024)},{id:3,url:'',pendingUrl:'https://xn--mller-kva.de/a%20b#top'}]}];
+await check('pulse()');
+const pulse=posted.at(-1);
+assert(JSON.stringify(pulse).length<4096);
+assert.equal(pulse.active_url,'https://x.com/home');
+assert.deepEqual(pulse.tabs.map(t=>t.url),['https://x.com/home','','https://xn--mller-kva.de/a%20b']);
+console.log('Extension: domain boundaries, exceptions, deny dominance, dynamic rule removal, compact pulses passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
