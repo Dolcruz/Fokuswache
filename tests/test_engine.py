@@ -25,6 +25,16 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(host_match('https://www.example.com/foo/bar', 'example.com/foo'))
         self.assertFalse(host_match('https://example.com/other', 'example.com/foo'))
 
+    def test_internationalized_targets_match_browser_urls(self):
+        # Browsers report IDN hosts as punycode and percent-encode non-ASCII paths.
+        self.assertTrue(host_match('https://www.xn--mller-kva.de/', 'Müller.de'))
+        self.assertTrue(host_match('https://xn--strae-oqa.de/', 'straße.de'))
+        self.assertTrue(host_match('https://de.wikipedia.org/wiki/Fu%C3%9Fball_EM', 'de.wikipedia.org/wiki/Fußball'))
+        self.assertTrue(host_match('https://example.com/a%20b', 'example.com/a b'))
+        self.assertFalse(host_match('https://xn--mller-kva.de.evil.org/', 'müller.de'))
+        r = validate_rule({'name': 'Work', 'kind': 'web', 'targets': ['*'], 'exceptions': ['bücher.de']})
+        self.assertFalse(web_match(r, 'https://xn--bcher-kva.de/'))
+
     def test_global_web_and_exceptions(self):
         r = validate_rule({'name':'Work', 'kind':'web', 'targets':['*'], 'exceptions':['example.org']})
         self.assertFalse(web_match(r, 'https://sub.example.org/test'))
