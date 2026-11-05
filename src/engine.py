@@ -4,8 +4,9 @@ import datetime as dt
 import math
 import os
 import re
+import unicodedata
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 UTC = dt.timezone.utc
@@ -19,6 +20,14 @@ def timestamp(value):
         raise ValueError('Zeitpunkt muss eine Zeitzone enthalten.')
     return parsed.astimezone(UTC)
 
+def web_target(pattern):
+    """Split a web target the way browsers report URLs: punycode host, percent-encoded path."""
+    p = urlsplit(pattern if '://' in pattern else 'https://' + pattern.lstrip('*.'))
+    host = unicodedata.normalize('NFKC', p.hostname or '').lower()
+    host = '.'.join(x if x.isascii() else 'xn--' + x.encode('punycode').decode('ascii') for x in host.split('.'))
+    path = ''.join(c if c.isascii() and c not in ' "<>`{}' else quote(c) for c in p.path)
+    return p, host, path
+
 def host_match(url, pattern):
     try:
         u = urlsplit(url)
@@ -26,9 +35,9 @@ def host_match(url, pattern):
             return False
         if pattern == '*':
             return True
-        p = urlsplit(pattern if '://' in pattern else 'https://' + pattern.lstrip('*.'))
-        host, target = (u.hostname or '').lower().rstrip('.'), (p.hostname or '').lower().rstrip('.')
-        return bool(target) and (host == target or host.endswith('.' + target)) and (not p.path or p.path == '/' or u.path.startswith(p.path))
+        _, target, path = web_target(pattern)
+        host, target = (u.hostname or '').lower().rstrip('.'), target.rstrip('.')
+        return bool(target) and (host == target or host.endswith('.' + target)) and (path in ('', '/') or u.path.startswith(path))
     except ValueError:
         return False
 
