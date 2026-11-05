@@ -2,6 +2,7 @@ import copy
 import ctypes
 import datetime as dt
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -25,6 +26,13 @@ from windows import Firewall, app_dir, browser_ancestor, browser_root, is_browse
 
 DATA = Path(os.environ.get('PROGRAMDATA', r'C:\ProgramData')) / 'FokusWache'
 BROWSER_CONNECTION_LEASE = 12
+
+def foreground_report(raw):
+    """Keep only the fields ticks evaluate; a malformed report counts as no foreground and idle."""
+    raw = raw if isinstance(raw, dict) else {}
+    pid, idle = raw.get('pid'), raw.get('idle')
+    return {'pid': pid if type(pid) is int and pid >= 0 else 0,
+            'idle': idle if type(idle) in (int, float) and math.isfinite(idle) and idle >= 0 else 99999}
 
 class Controller:
     def __init__(self, data=DATA, enforce=True):
@@ -122,7 +130,7 @@ class Controller:
                     raise ValueError('Ungültige Browsermeldung.')
                 tabs = [{'id': x['id'], 'url': str(x.get('url', ''))[:8192]} for x in tabs if isinstance(x, dict) and type(x.get('id')) is int]
                 active = str(req.get('active_url', ''))[:8192] if req.get('focused') else ''
-                fg = req.get('foreground', {})
+                fg = foreground_report(req.get('foreground'))
                 self.hosts[pid] = {'root': process.pid, 'created': process.create_time(), 'time': mono,
                                    'url': active, 'fg': fg, 'focused': bool(req.get('focused')), 'name': process.name(), 'ready': bool(req.get('ready'))}
                 rules = self.engine.rules(now)
@@ -133,7 +141,7 @@ class Controller:
                         'watching': bool(web_rules), 'time': now.isoformat()}
             if role == 'agent' and op == 'foreground':
                 self.agent_pids.add(pid)
-                self.agents[pid] = {'time': mono, 'fg': req.get('foreground', {}), 'session': process.username()}
+                self.agents[pid] = {'time': mono, 'fg': foreground_report(req.get('foreground')), 'session': process.username()}
                 # Agent acknowledges display and execution; the service remains the authority.
                 return {'pending': [dict(p, remaining=max(0, (timestamp(p['due'])-now).total_seconds())) for p in self.pending.values()], 'events': self.events[-5:]}
             if role != 'ui':

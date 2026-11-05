@@ -1,10 +1,11 @@
 import datetime as dt
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from service import Controller
 from engine import UTC
@@ -43,6 +44,23 @@ class ControllerTests(unittest.TestCase):
                 self.assertTrue(all(not r['enabled'] for r in c.engine.state['rules']))
                 self.assertEqual(c.games,games)
                 terminate.assert_not_called()
+
+    def test_malformed_foreground_report_cannot_stop_enforcement(self):
+        # Any FokusWache.exe started with --agent may send reports; odd values must not halt ticks.
+        import os
+        with tempfile.TemporaryDirectory() as folder, patch('service.installed_games',return_value=[]):
+            c=Controller(folder,enforce=False)
+            rule=c.engine.save(dict(name='Netz',kind='internet',enabled=True,daily_minutes=1),c.now())
+            client=Mock();client.username.return_value='user'
+            for fg in (None,5,'x',[],{'pid':None},{'pid':'1','idle':'0'},{'pid':os.getpid(),'idle':None},{'pid':os.getpid(),'idle':math.nan}):
+                with self.subTest(fg=fg):
+                    with patch.object(c,'role',return_value=('agent',client)):
+                        c.handle({'op':'foreground','foreground':fg},os.getpid())
+                    c.tick(None)
+                    with patch.object(c,'role',return_value=('ui',client)):
+                        self.assertEqual(c.handle({'op':'status'},os.getpid())['activity'][0]['pid'],
+                                         fg['pid'] if isinstance(fg,dict) and type(fg['pid']) is int else 0)
+            self.assertEqual(c.engine.used(rule['id'],c.now()),0)
 
     def test_browser_pulse_requires_browser_parent(self):
         import os
