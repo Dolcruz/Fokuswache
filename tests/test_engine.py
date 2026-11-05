@@ -120,6 +120,16 @@ class PolicyTests(unittest.TestCase):
         for changes in ({'schedules':[{'days':[7],'start':'09:00','end':'10:00'}]}, {'schedules':[{'days':[0],'start':'24:00','end':'10:00'}]}, {'exceptions':['example.com/private']}, {'timer_until':'2026-10-01T12:00:00'}):
             with self.assertRaises(ValueError):self.rule(**changes)
 
+    def test_web_targets_must_parse_in_browser(self):
+        # The extension could not turn these into blocking rules; one of them kept the
+        # browser connection unconfirmed and paused the browser network while the rule blocked.
+        for target in ('exa mple.com', 'youtube.com shorts', 'x.com<', 'x.com:abc', 'http://x.com:99999',
+                       'ex%61mple.com', 'x.com\\shorts', 'x.com/a\\b', 'https://.x.com', '[x.com'):
+            with self.assertRaisesRegex(ValueError, 'Web-Ziele', msg=target):
+                validate_rule({'name': 'Test', 'kind': 'web', 'targets': [target]})
+        for target in ('müller.de', '*.x.com', '*x.com', '.x.com', 'x.com.', 'x.com:8080/a', '1.2.3.4', 'my_host.example.com'):
+            validate_rule({'name': 'Test', 'kind': 'web', 'targets': [target]})
+
     def test_disabled_presets(self):
         for r in presets():self.assertFalse(r['enabled'])
 

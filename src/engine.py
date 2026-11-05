@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 UTC = dt.timezone.utc
 ZONE = ZoneInfo('Europe/Berlin')
+WEB_HOST = re.compile(r'[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.?')
 
 def timestamp(value):
     if not value:
@@ -106,8 +107,14 @@ def validate_rule(raw):
         for pattern in r['targets'] + r['exceptions']:
             if pattern == '*':
                 continue
-            p = urlsplit(pattern if '://' in pattern else 'https://' + pattern.lstrip('*.'))
-            if p.scheme not in ('http', 'https') or not p.hostname or p.username or p.query or p.fragment or '*' in pattern.lstrip('*.'):
+            try:
+                p, host, _ = web_target(pattern)
+                p.port
+            except ValueError:
+                p = host = None
+            # Only hosts the browser parses the same way; the extension rejects the whole rule update otherwise.
+            if (not p or p.scheme not in ('http', 'https') or not WEB_HOST.fullmatch(host) or p.username
+                    or p.query or p.fragment or '*' in pattern.lstrip('*.') or '\\' in pattern):
                 raise ValueError('Web-Ziele: Domain oder Domain/Pfad, ohne Suchparameter.')
         for pattern in r['exceptions']:
             if pattern != '*':
