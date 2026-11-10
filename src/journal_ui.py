@@ -154,7 +154,8 @@ class EntryEditor(QDialog):
     def toggle_time(self, enabled):
         self.time_fields.setVisible(enabled)
         self.day.setEnabled(not enabled)
-        self.day.setDate(self.start.date())
+        if enabled:
+            self.day.setDate(self.start.date())
 
     def change_day(self, date):
         if not self.with_time.isChecked():

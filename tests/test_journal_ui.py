@@ -14,7 +14,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QApplication, QDialog
 from journal_ui import JournalPage, EntryEditor
-from journal import day_start
+from journal import ZONE, day_start
 
 APP = QApplication.instance() or QApplication([])
 
@@ -137,6 +137,42 @@ class JournalUITests(unittest.TestCase):
         self.assertEqual(len(self.page.rows), 1)
         self.assertEqual(self.page.rows[0]['id'], entry['id'])
         self.assertIsNotNone(self.page.rows[0]['start'])
+
+    def test_untimed_editor_keeps_selected_day_after_midnight(self):
+        midnight = day_start(self.day)
+        key = self.page.journal.save('Gelesen', day=self.day)
+        existing = self.page.journal.entries(midnight, midnight + 86400)[0]
+        now = dt.datetime(2026, 9, 12, 0, 30, tzinfo=ZONE)
+        with patch('journal_ui.dt.datetime', wraps=dt.datetime) as clock:
+            clock.now.return_value = now
+            for entry in (None, existing):
+                with self.subTest(existing=entry is not None):
+                    editor = EntryEditor(self.page.journal, self.day, self.page, entry, draft='Gelesen')
+                    self.assertFalse(editor.with_time.isChecked())
+                    self.assertEqual(editor.day.date().toPython(), self.day)
+                    editor.save()
+                    self.assertEqual(editor.result(), QDialog.Accepted)
+        rows = self.page.journal.entries(midnight, midnight + 86400)
+        self.assertEqual(len(rows), 2)
+        self.assertIn(key, [row['id'] for row in rows])
+        self.assertTrue(all(row['day'] == self.day.isoformat() and row['start'] is None for row in rows))
+
+    def test_untimed_date_change_and_time_toggle_preserve_entry_day(self):
+        editor = EntryEditor(self.page.journal, self.day, self.page, draft='Gelesen')
+        selected = QDate(2026, 9, 13)
+        editor.day.setDate(selected)
+        self.assertEqual(editor.start.date(), selected)
+        editor.with_time.setChecked(True)
+        self.assertEqual(editor.day.date(), selected)
+        editor.start.setDate(QDate(2026, 9, 14))
+        editor.with_time.setChecked(False)
+        self.assertEqual(editor.day.date(), QDate(2026, 9, 14))
+        editor.save()
+        self.assertEqual(editor.result(), QDialog.Accepted)
+        start = day_start(dt.date(2026, 9, 14))
+        rows = self.page.journal.entries(start, start + 86400)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]['start'])
 
 
 if __name__ == '__main__':
