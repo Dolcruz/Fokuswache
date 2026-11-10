@@ -210,12 +210,10 @@ class Firewall:
         path = os.path.normcase(path)
         if self.browser_state.get(path) == blocked:
             return
+        self.browser_state.pop(path, None)
         import win32com.client
         name = 'FokusWache - Browser ' + hashlib.sha256(path.encode()).hexdigest()[:16]
-        try:
-            self.rules.Remove(name)
-        except Exception:
-            pass
+        self.rules.Remove(name)
         if blocked:
             rule = win32com.client.Dispatch('HNetCfg.FWRule')
             rule.Name = name
@@ -232,12 +230,11 @@ class Firewall:
     def set_blocked(self, blocked):
         if self.enabled == blocked:
             return
+        # A failed multi-rule update leaves the actual state unconfirmed.
+        self.enabled = None
         import win32com.client
         for name, direction in zip(self.names, (2, 1)):
-            try:
-                self.rules.Remove(name)
-            except Exception:
-                pass
+            self.rules.Remove(name)
             if blocked:
                 rule = win32com.client.Dispatch('HNetCfg.FWRule')
                 rule.Name = name

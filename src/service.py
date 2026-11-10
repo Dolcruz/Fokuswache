@@ -283,15 +283,19 @@ class Controller:
             self.browser_confirmed = {k: t for k, t in self.browser_confirmed.items() if k in browser_keys}
             self.browser_blocked = blocked_keys
             if self.enforce:
-                for path in self.stale_browser_paths:
-                    firewall.browser_block(path, False)
-                self.stale_browser_paths.clear()
+                for path in self.stale_browser_paths.copy():
+                    try:
+                        firewall.browser_block(path, False)
+                    except Exception as e:
+                        self.errors.append('Alte Browsersperre nicht aufgehoben: ' + str(e))
+                    else:
+                        self.stale_browser_paths.remove(path)
                 for path in self.browser_paths:
                     try:
                         firewall.browser_block(path, web_on and not path_ready.get(path, False))
                     except Exception as e:
                         self.errors.append('Browsersperre nicht bestätigt: ' + str(e))
-            self.engine.state['browser_paths'] = sorted(self.browser_paths)
+            self.engine.state['browser_paths'] = sorted(self.browser_paths | self.stale_browser_paths)
             net_blocked = any(r['blocked'] and r['kind'] == 'internet' for r in rules)
             if self.enforce:
                 try:
