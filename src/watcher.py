@@ -147,36 +147,61 @@ def assess(key, model, goal, jpeg, context, client_factory=None):
     return parse(response), usage_of(response)
 
 
-def login_dir():
-    """Folder of the signed-in user's `ant auth login` profile, or None when there is no login.
+def session_appdata():
+    """Roaming folder of the user signed in to this process's Windows session, and how it was found.
 
-    The session agent runs as SYSTEM inside the user's session, so the user's roaming folder
-    is looked up through the session's own token instead of this process's environment.
+    The session agent runs as SYSTEM inside the user's session, so its own environment
+    points at the system profile.
     """
-    base = None
+    import win32ts
+    notes = []
+    session = win32ts.ProcessIdToSessionId(os.getpid())
     try:
-        import win32process
         import win32profile
-        import win32ts
-        session = win32process.ProcessIdToSessionId(os.getpid())
         token = win32ts.WTSQueryUserToken(session)
         try:
-            base = Path(win32profile.GetUserProfileDirectory(token)) / 'AppData' / 'Roaming'
+            return Path(win32profile.GetUserProfileDirectory(token)) / 'AppData' / 'Roaming', 'Sitzungstoken'
         finally:
             token.Close()
-    except Exception:
-        base = Path(os.environ['APPDATA']) if os.environ.get('APPDATA') else None  # ordinary user process
+    except Exception as error:
+        notes.append('Token: ' + type(error).__name__ + ' ' + str(getattr(error, 'winerror', '') or error)[:40])
+    try:
+        import win32security
+        import winreg
+        name = win32ts.WTSQuerySessionInformation(None, session, win32ts.WTSUserName)
+        domain = win32ts.WTSQuerySessionInformation(None, session, win32ts.WTSDomainName)
+        sid = win32security.ConvertSidToStringSid(win32security.LookupAccountName(None, domain + '\\' + name)[0])
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' + '\\' + sid) as key:
+            folder = os.path.expandvars(winreg.QueryValueEx(key, 'ProfileImagePath')[0])
+        return Path(folder) / 'AppData' / 'Roaming', 'Profilliste'
+    except Exception as error:
+        notes.append('Profil: ' + type(error).__name__ + ' ' + str(getattr(error, 'winerror', '') or error)[:40])
+    if os.environ.get('APPDATA'):
+        return Path(os.environ['APPDATA']), 'Umgebung (' + '; '.join(notes) + ')'
+    return None, '; '.join(notes)
+
+
+def login_status():
+    """(folder of the user's `ant auth login` profile or None, short text for diagnostics)."""
+    try:
+        base, how = session_appdata()
+    except Exception as error:
+        return None, 'Sitzung: ' + type(error).__name__
     if not base:
-        return None
+        return None, 'Kein Benutzerordner gefunden (' + how + ').'
     folder = base / 'Anthropic'
     try:
         pointer = folder / 'active_config'
         profile = (pointer.read_text('utf-8').strip() if pointer.is_file() else '') or 'default'
         if (folder / 'configs' / (profile + '.json')).is_file() and (folder / 'credentials' / (profile + '.json')).is_file():
-            return folder
-    except OSError:
-        pass
-    return None
+            return folder, 'Anmeldung gefunden über ' + how + '.'
+        return None, 'Keine Anmeldung in ' + str(folder) + ' (über ' + how + ').'
+    except OSError as error:
+        return None, 'Anmeldung nicht lesbar: ' + type(error).__name__ + ' (über ' + how + ').'
+
+
+def login_dir():
+    return login_status()[0]
 
 
 def make_client(key, client_factory=None):

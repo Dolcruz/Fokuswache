@@ -19,8 +19,12 @@ GREEN, INK, MUTED, PAPER = '#207765', '#233346', '#687787', '#ffffff'
 LOG = Path(os.environ.get('PROGRAMDATA', r'C:\ProgramData')) / 'FokusWache' / 'agent.log'
 
 
+LAST = {'text': ''}  # latest diagnostic line, also shown in the app under "Browser & Schutz"
+
+
 def log(message):
     """Text-only diagnostics of the learning watcher (never image data, keys or window titles)."""
+    LAST['text'] = dt.datetime.now().strftime('%H:%M:%S ') + message.strip()[:260]
     try:
         if LOG.exists() and LOG.stat().st_size > 512 * 1024:
             LOG.replace(LOG.with_suffix('.log.old'))
@@ -45,14 +49,18 @@ def run_agent():
     state = {'pending': [], 'connected': False, 'last': 0, 'study': None, 'summary': None, 'vision_ready': False}
     executed = {}
     ui = queue.Queue()
-    login = {'checked': -100.0, 'found': False}
+    login = {'checked': -100.0, 'found': False, 'note': ''}
     def observe():
         while True:
             try:
                 if time.monotonic() - login['checked'] > 10:
-                    from watcher import login_dir
-                    login.update(checked=time.monotonic(), found=login_dir() is not None)
-                answer = request({'op': 'foreground', 'foreground': foreground(), 'vision_login': login['found']})
+                    from watcher import login_status
+                    folder, note = login_status()
+                    if note != login['note']:
+                        log('Anmeldung: ' + note)
+                    login.update(checked=time.monotonic(), found=folder is not None, note=note)
+                answer = request({'op': 'foreground', 'foreground': foreground(), 'vision_login': login['found'],
+                                  'vision_note': login['note'], 'watch_note': LAST['text']})
                 state.update(pending=answer.get('pending', []), connected=True, last=time.monotonic(),
                              study=answer.get('study'), summary=answer.get('summary'),
                              vision_ready=bool(answer.get('vision_ready')))

@@ -234,9 +234,13 @@ class VisionCard:
     def render(self, status):
         ready = status.get('vision_ready')
         has_key, has_login = status.get('vision_key'), status.get('vision_login')
-        self.state.setText('● Aufpasser bereit: API-Schlüssel hinterlegt (verschlüsselt im Dienst).' if has_key else
-                           '● Aufpasser bereit: Anmeldung über „ant auth login“ gefunden.' if has_login else
-                           '○ Aufpasser aus: keine Anmeldung und kein Schlüssel. Im Lernmodus gelten dann nur die Sperren.')
+        text = ('● Aufpasser bereit: API-Schlüssel hinterlegt (verschlüsselt im Dienst).' if has_key else
+                '● Aufpasser bereit: Anmeldung über „ant auth login“ gefunden.' if has_login else
+                '○ Aufpasser aus: keine Anmeldung und kein Schlüssel. Im Lernmodus gelten dann nur die Sperren.'
+                + ('\n' + status['vision_note'] if status.get('vision_note') else ''))
+        if status.get('watch_note'):
+            text += '\nLetzte Meldung: ' + status['watch_note']
+        self.state.setText(text)
         model = status.get('vision_model')
         if model != self.synced and self.model.findData(model) >= 0:
             self.model.setCurrentIndex(self.model.findData(model))

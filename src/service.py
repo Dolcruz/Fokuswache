@@ -76,6 +76,8 @@ class Controller:
                     self.browser_paths.add(str(base / suffix))
         self.pending = {}
         self.vision_login = False
+        self.vision_note = ''
+        self.watch_note = ''
         self.errors = []
         self.events = self.engine.state.get('events', [])[-100:]
         self.previous_ids = set()
@@ -189,6 +191,8 @@ class Controller:
                 self.agents[pid] = {'time': mono, 'fg': foreground_report(req.get('foreground')), 'session': process.username()}
                 if 'vision_login' in req:
                     self.vision_login = req.get('vision_login') is True
+                    self.vision_note = str(req.get('vision_note') or '')[:300]
+                    self.watch_note = str(req.get('watch_note') or '')[:300]
                 summary = next((h for h in reversed(self.engine.state.get('study_history', []))
                                 if not h.get('shown') and (now - timestamp(h['ended'])).total_seconds() < 6 * 3600), None)
                 # Agent acknowledges display and execution; the service remains the authority.
@@ -229,6 +233,7 @@ class Controller:
                         'study_stop_sentence': STUDY_STOP_SENTENCE, 'study_stop_wait': STUDY_STOP_WAIT,
                         'vision_ready': self.vision_login or self.vision_key() is not None,
                         'vision_login': self.vision_login, 'vision_key': self.vision_key() is not None,
+                        'vision_note': self.vision_note, 'watch_note': self.watch_note,
                         'vision_model': self.engine.state.get('vision_model', VISION_MODELS[0]), 'vision_models': list(VISION_MODELS)}
             if op == 'study_stop_request':
                 return {'ok': True, 'wait': self.study_change(lambda: self.engine.study_stop_request(now))}

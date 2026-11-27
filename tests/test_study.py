@@ -288,6 +288,13 @@ class WatcherTests(unittest.TestCase):
 
 
 class LoginTests(unittest.TestCase):
+    def test_user_folder_is_found_without_the_session_token(self):
+        # An ordinary process may not query the session token; the profile list still names the signed-in user.
+        with patch('win32ts.WTSQueryUserToken', side_effect=OSError('1314')), patch.dict(os.environ, {'APPDATA': r'C:\falsch'}):
+            folder, how = watcher.session_appdata()
+        self.assertEqual(how, 'Profilliste')
+        self.assertEqual(folder, Path.home() / 'AppData' / 'Roaming')
+
     def profile(self, folder, name='default', pointer=None):
         base = Path(folder, 'Anthropic')
         for part in ('configs', 'credentials'):
@@ -298,7 +305,7 @@ class LoginTests(unittest.TestCase):
         return base
 
     def test_login_is_found_only_with_config_and_credentials_of_the_active_profile(self):
-        with tempfile.TemporaryDirectory() as folder, patch('win32ts.WTSQueryUserToken', side_effect=OSError),              patch.dict(os.environ, {'APPDATA': folder}):
+        with tempfile.TemporaryDirectory() as folder, patch('watcher.session_appdata', return_value=(Path(folder), 'Test')):
             self.assertIsNone(watcher.login_dir())
             base = self.profile(folder)
             self.assertEqual(watcher.login_dir(), base)
@@ -312,7 +319,8 @@ class LoginTests(unittest.TestCase):
     def test_key_wins_and_login_is_used_without_one(self):
         calls = []
         factory = lambda **kwargs: calls.append(kwargs) or Mock()
-        with tempfile.TemporaryDirectory() as folder, patch('win32ts.WTSQueryUserToken', side_effect=OSError),              patch.dict(os.environ, {'APPDATA': folder, 'ANTHROPIC_API_KEY': 'stale'}):
+        with tempfile.TemporaryDirectory() as folder, patch('watcher.session_appdata', return_value=(Path(folder), 'Test')), \
+             patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'stale'}):
             with self.assertRaises(RuntimeError):
                 watcher.make_client(None, factory)
             watcher.make_client('sk-key', factory)
@@ -337,6 +345,8 @@ class LoginTests(unittest.TestCase):
             self.assertTrue(answer['vision_ready'])
             status = call('ui', {'op': 'status'})
             self.assertEqual((status['vision_ready'], status['vision_login'], status['vision_key']), (True, True, False))
+            call('agent', {'op': 'foreground', 'foreground': {'pid': 0, 'idle': 0}, 'vision_login': True, 'vision_note': 'x' * 900})
+            self.assertEqual(len(call('ui', {'op': 'status'})['vision_note']), 300)
             call('agent', {'op': 'study_start', 'minutes': 25, 'goal': 'Lernen'})
             self.assertIsNone(call('agent', {'op': 'vision_config'})['key'])
             call('agent', {'op': 'foreground', 'foreground': {'pid': 0, 'idle': 0}, 'vision_login': 'ja'})
