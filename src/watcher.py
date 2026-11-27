@@ -23,6 +23,7 @@ Abgedriftet ist, wer gerade sichtbar etwas ohne Bezug zum Ziel tut: Videos, Stre
 News, Shopping, Spiele, Foren oder Webseiten zu anderen Themen.
 
 Eine Sperrseite von FokusWache bedeutet nur einen kurzen Versuch; bewerte sie mit confidence "niedrig".
+Der kleine Pixel-Hund am Bildschirmrand gehört zu FokusWache. Beachte ihn nicht.
 
 Antwortfelder:
 - learning: true oder false

@@ -285,6 +285,33 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(max(Image.open(io.BytesIO(jpeg)).size), watcher.MAX_EDGE)
 
 
+class MascotTests(unittest.TestCase):
+    def test_every_mood_is_a_complete_distinct_face(self):
+        import mascot
+        faces = {}
+        for mood in mascot.MOODS:
+            rows = mascot.grid(mood)
+            self.assertEqual(len(rows), mascot.SIZE)
+            self.assertTrue(all(len(r) == mascot.SIZE for r in rows), mood)
+            self.assertTrue(all(c == '.' or c in mascot.COLORS for r in rows for c in r), mood)
+            faces[mood] = tuple(map(tuple, rows))
+            self.assertIn(mood, mascot.SAYINGS)
+        self.assertEqual(len(set(faces.values())), len(faces))
+
+    def test_mood_follows_how_the_session_is_going(self):
+        import mascot
+        self.assertEqual(mascot.mood_for(0, 0), 'wach')
+        self.assertEqual(mascot.mood_for(1, 0), 'zufrieden')
+        self.assertEqual(mascot.mood_for(3, 0), 'stolz')
+        self.assertEqual(mascot.mood_for(0, 1), 'genervt')
+        self.assertEqual(mascot.mood_for(0, 2), 'traurig')
+        self.assertEqual(mascot.summary_mood(9, 0), 'stolz')
+        self.assertEqual(mascot.summary_mood(9, 2), 'zufrieden')
+        self.assertEqual(mascot.summary_mood(4, 3), 'traurig')
+        for mood in ('stolz', 'zufrieden', 'traurig'):
+            self.assertIn(mood, mascot.SUMMARY_SAYINGS)
+
+
 class StudyUiTests(unittest.TestCase):
     def test_dialogs_render_from_status(self):
         os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -11,6 +11,7 @@ import traceback
 import tkinter as tk
 from tkinter import ttk
 from ipc import request
+import mascot
 from windows import foreground, perform_device
 
 HOTKEY_ID = 0x4C57  # Ctrl+Alt+L opens the learning-session start dialog
@@ -125,31 +126,116 @@ def work_area():
         return 0, 0, 1280, 720
 
 
+def move_within_screen(window, x, y):
+    """Dragging can never push a window fully off the desktop."""
+    left, top = window.winfo_vrootx(), window.winfo_vrooty()
+    right, bottom = left + window.winfo_vrootwidth(), top + window.winfo_vrootheight()
+    x = max(left, min(x, right - window.winfo_width()))
+    y = max(top, min(y, bottom - window.winfo_height()))
+    window.geometry(f'+{x}+{y}')
+
+
+class Companion:
+    """The pixel watchdog sitting in a corner during a learning session; its face shows how it is going."""
+    KEY = '#010203'  # transparent colour: only the figure itself is visible and clickable
+
+    def __init__(self, root, scale=5):
+        self.scale = scale
+        self.window = w = tk.Toplevel(root)
+        w.withdraw()
+        w.overrideredirect(True)
+        w.attributes('-topmost', True)
+        w.attributes('-transparentcolor', self.KEY)
+        w.configure(bg=self.KEY)
+        side = mascot.SIZE * scale
+        self.canvas = tk.Canvas(w, width=side, height=side, bg=self.KEY, highlightthickness=0, cursor='fleur')
+        self.canvas.pack()
+        self.canvas.bind('<ButtonPress-1>', self.grab)
+        self.canvas.bind('<B1-Motion>', self.drag)
+        self.canvas.bind('<Double-Button-1>', lambda e: self.dismiss())
+        no_activate(w)
+        self.placed = self.visible = self.dismissed = False
+        self.mood = None
+
+    def grab(self, event):
+        self.offset = (event.x_root - self.window.winfo_x(), event.y_root - self.window.winfo_y())
+
+    def drag(self, event):
+        move_within_screen(self.window, event.x_root - self.offset[0], event.y_root - self.offset[1])
+        self.placed = True
+
+    def dismiss(self):
+        self.dismissed = True  # hidden until the next learning session
+        self.hide()
+
+    def show(self, mood):
+        if mood != self.mood:
+            mascot.draw(self.canvas, mood, self.scale, self.KEY)
+            self.mood = mood
+        if self.dismissed or self.visible:
+            return
+        if not self.placed:
+            left, top, right, bottom = work_area()
+            side = mascot.SIZE * self.scale
+            self.window.geometry(f'{side}x{side}+{right - side - 20}+{bottom - side - 12}')
+        previous = ctypes.windll.user32.GetForegroundWindow()
+        self.window.deiconify()
+        self.window.attributes('-topmost', True)
+        self.window.update_idletasks()
+        hwnd = root_hwnd(self.window)
+        if previous and previous != hwnd and ctypes.windll.user32.GetForegroundWindow() == hwnd:
+            ctypes.windll.user32.SetForegroundWindow(previous)
+        self.visible = True
+
+    def hide(self):
+        self.window.withdraw()
+        self.visible = False
+
+
 class Notice:
-    """Small, movable, always-on-top card. Never modal, never full-screen."""
-    def __init__(self, root, title, accent=GREEN, width=380):
+    """Movable, always-on-top card. Never modal, never full-screen.
+
+    strong=True is the drift notice: wider, larger type, a coloured header and placed at the
+    top centre of the active monitor (over window titles and tabs, not over page content).
+    """
+    def __init__(self, root, title, accent=GREEN, width=380, strong=False, figure=0):
         self.window = w = tk.Toplevel(root)
         w.withdraw()
         w.overrideredirect(True)
         w.attributes('-topmost', True)
         w.configure(bg=accent)
-        self.width = width
-        body = tk.Frame(w, bg=PAPER, padx=16, pady=12)
-        body.pack(fill='both', expand=True, padx=(4, 0))
-        head = tk.Frame(body, bg=PAPER)
-        head.pack(fill='x')
-        self.title = tk.Label(head, text=title, bg=PAPER, fg=INK, font=('Segoe UI Semibold', 11), anchor='w')
+        self.width, self.strong = width, strong
+        size = (16, 13, 11, 11) if strong else (11, 10, 9, 9)  # title, text, small, button
+        self.button_font = ('Segoe UI Semibold', size[3])
+        outer = tk.Frame(w, bg=PAPER)
+        outer.pack(fill='both', expand=True, padx=(0 if strong else 4, 0))
+        head_bg, head_fg, close_fg = (accent, 'white', 'white') if strong else (PAPER, INK, MUTED)
+        head = tk.Frame(outer, bg=head_bg, padx=20 if strong else 16, pady=12 if strong else 0)
+        head.pack(fill='x', pady=(0 if strong else 12, 0), padx=0 if strong else 16)
+        if not strong:
+            head.configure(padx=0)
+        self.title = tk.Label(head, text=title, bg=head_bg, fg=head_fg, font=('Segoe UI Semibold', size[0]), anchor='w')
         self.title.pack(side='left', fill='x', expand=True)
-        close = tk.Label(head, text='✕', bg=PAPER, fg=MUTED, font=('Segoe UI', 11), cursor='hand2', padx=4)
+        close = tk.Label(head, text='✕', bg=head_bg, fg=close_fg, font=('Segoe UI', size[0] - 1 if strong else 11), cursor='hand2', padx=4)
         close.pack(side='right')
         close.bind('<Button-1>', lambda e: self.hide())
-        self.text = tk.Label(body, bg=PAPER, fg=INK, font=('Segoe UI', 10), justify='left', anchor='w', wraplength=width - 50)
-        self.text.pack(fill='x', pady=(6, 0))
-        self.small = tk.Label(body, bg=PAPER, fg=MUTED, font=('Segoe UI', 9), justify='left', anchor='w', wraplength=width - 50)
+        row = tk.Frame(outer, bg=PAPER, padx=20 if strong else 16, pady=14 if strong else 0)
+        row.pack(fill='both', expand=True, pady=(0, 0 if strong else 12))
+        self.figure = None
+        if figure:
+            self.figure_scale = figure
+            self.figure = tk.Canvas(row, width=mascot.SIZE * figure, height=mascot.SIZE * figure, bg=PAPER, highlightthickness=0)
+            self.figure.pack(side='left', anchor='n', padx=(0, 16))
+        body = tk.Frame(row, bg=PAPER)
+        body.pack(side='left', fill='both', expand=True)
+        wrap = width - (60 if strong else 50) - (mascot.SIZE * figure + 16 if figure else 0)
+        self.text = tk.Label(body, bg=PAPER, fg=INK, font=('Segoe UI', size[1]), justify='left', anchor='w', wraplength=wrap)
+        self.text.pack(fill='x', pady=(0 if strong else 6, 0))
+        self.small = tk.Label(body, bg=PAPER, fg=MUTED, font=('Segoe UI', size[2]), justify='left', anchor='w', wraplength=wrap)
         self.small.pack(fill='x', pady=(6, 0))
         self.actions = tk.Frame(body, bg=PAPER)
-        self.actions.pack(fill='x', pady=(10, 0))
-        for widget in (w, body, head, self.title, self.text, self.small):
+        self.actions.pack(fill='x', pady=(12 if strong else 10, 0))
+        for widget in (w, outer, row, body, head, self.title, self.text, self.small) + ((self.figure,) if self.figure else ()):
             widget.bind('<ButtonPress-1>', self.grab)
             widget.bind('<B1-Motion>', self.drag)
         no_activate(w)
@@ -160,17 +246,19 @@ class Notice:
         self.offset = (event.x_root - self.window.winfo_x(), event.y_root - self.window.winfo_y())
 
     def drag(self, event):
-        self.window.geometry(f'+{event.x_root - self.offset[0]}+{event.y_root - self.offset[1]}')
+        move_within_screen(self.window, event.x_root - self.offset[0], event.y_root - self.offset[1])
         self.placed = True  # keep the user's chosen spot for the next notice
 
     def button(self, text, command, primary=False):
         b = tk.Label(self.actions, text=text, bg=GREEN if primary else '#edf3f3', fg='white' if primary else INK,
-                     font=('Segoe UI Semibold', 9), padx=12, pady=5, cursor='hand2')
+                     font=self.button_font, padx=16 if self.strong else 12, pady=8 if self.strong else 5, cursor='hand2')
         b.pack(side='left', padx=(0, 8))
         b.bind('<Button-1>', lambda e: command())
         return b
 
-    def show(self, text, small=''):
+    def show(self, text, small='', mood=None):
+        if self.figure and mood:
+            mascot.draw(self.figure, mood, self.figure_scale, PAPER)
         self.text.configure(text=text)
         self.small.configure(text=small)
         self.small.pack_forget()
@@ -180,7 +268,11 @@ class Notice:
             left, top, right, bottom = work_area()
             self.window.update_idletasks()
             height = self.window.winfo_reqheight()
-            self.window.geometry(f'{self.width}x{height}+{right - self.width - 24}+{bottom - height - 24}')
+            if self.strong:
+                x, y = (left + right - self.width) // 2, top + 24
+            else:
+                x, y = right - self.width - 24, bottom - height - 24
+            self.window.geometry(f'{self.width}x{height}+{x}+{y}')
         user32 = ctypes.windll.user32
         previous = user32.GetForegroundWindow()
         self.window.deiconify()
@@ -210,6 +302,7 @@ class StudyWatcher:
         self.summary_window = None
         self.start_window = None
         self.summary_shown = set()
+        self.companion = None
 
     # Runs on the Tk thread every 500 ms.
     def tick(self):
@@ -217,6 +310,11 @@ class StudyWatcher:
         if study and study['id'] != self.session:
             from watcher import Pace
             self.session, self.pace, self.failures = study['id'], Pace(), 0
+            if self.state['vision_ready']:
+                if not self.companion:
+                    self.companion = Companion(self.root)
+                self.companion.dismissed = False
+                self.companion.show('wach')
             self.due = time.monotonic() + self.pace.next_delay()
             log('Lernmodus erkannt; Aufpasser %s, erste Prüfung in %d s.' % (
                 'an' if self.state['vision_ready'] else 'aus (kein Schlüssel)', self.due - time.monotonic()))
@@ -227,6 +325,8 @@ class StudyWatcher:
             self.session = None
             if self.nudge:
                 self.nudge.hide()
+            if self.companion:
+                self.companion.hide()
         if study and self.state['vision_ready'] and not self.busy and time.monotonic() >= self.due:
             self.busy = True
             if self.nudge and self.nudge.visible:
@@ -278,6 +378,8 @@ class StudyWatcher:
         counted = result['learning'] or drift
         if counted:
             self.pace.record(not drift)
+            if self.companion:
+                self.companion.show(mascot.mood_for(self.pace.focus_streak, self.pace.drift_streak))
         threading.Thread(target=self.report, args=(sid, (not drift) if counted else None, result['place'], tokens), daemon=True).start()
         self.due = time.monotonic() + self.pace.next_delay()
         log('Prüfung: %s (%s), nächste in %d s.' % ('abgedriftet' if drift else 'lernt' if result['learning'] else 'unsicher',
@@ -293,10 +395,13 @@ class StudyWatcher:
 
     def show_nudge(self, result):
         if not self.nudge:
-            self.nudge = Notice(self.root, 'Kurz zurück zum Lernen?')
+            self.nudge = Notice(self.root, '', accent='#c2410c', width=640, strong=True, figure=7)
             self.nudge.button('Zurück zum Lernen', lambda: self.nudge.hide(), primary=True)
         goal = (self.state.get('study') or {}).get('goal', '')
-        self.nudge.show(result['message'] or 'Gerade sieht es nicht nach deinem Lernziel aus.', 'Dein Ziel: ' + goal)
+        again = bool(self.pace) and self.pace.drift_streak >= 2
+        self.nudge.title.configure(text='Noch mal abgedriftet. Kommst du zurück?' if again else 'Kurz zurück zum Lernen?')
+        self.nudge.show(result['message'] or 'Gerade sieht es nicht nach deinem Lernziel aus.', 'Dein Ziel: ' + goal,
+                        mood='traurig' if again else 'genervt')
 
     def show_info(self, title, text, small=''):
         if not self.info:
@@ -308,7 +413,7 @@ class StudyWatcher:
     def show_summary(self, s):
         if self.summary_window:
             self.summary_window.hide()
-        n = Notice(self.root, 'Lernmodus beendet' + (' (vorzeitig)' if s.get('early') else ''), width=420)
+        n = Notice(self.root, 'Lernmodus beendet' + (' (vorzeitig)' if s.get('early') else ''), width=480, figure=5)
         self.summary_window = n
         minutes = int(round(s['minutes']))
         lines = [f"{minutes} Minuten gelernt (geplant {s['planned_minutes']}).",
@@ -316,7 +421,8 @@ class StudyWatcher:
                  f"{s['drifts']}× abgedriftet bei {s['checks']} Prüfungen."]
         places = ', '.join(f'{k} ({v}×)' for k, v in sorted(s.get('places', {}).items(), key=lambda kv: -kv[1]))
         n.button('Schließen', lambda: n.hide(), primary=True)
-        n.show('\n'.join(lines), 'Wohin: ' + places if places else '')
+        mood = mascot.summary_mood(s['checks'], s['drifts'])
+        n.show('\n'.join(lines), ('Wohin: ' + places + '\n' if places else '') + mascot.SUMMARY_SAYINGS[mood], mood=mood)
         threading.Thread(target=lambda: request({'op': 'study_ack', 'id': s['id']}), daemon=True).start()
 
     def open_start(self):
