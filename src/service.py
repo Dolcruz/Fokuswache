@@ -75,6 +75,7 @@ class Controller:
                 if (base / suffix).exists():
                     self.browser_paths.add(str(base / suffix))
         self.pending = {}
+        self.vision_login = False
         self.errors = []
         self.events = self.engine.state.get('events', [])[-100:]
         self.previous_ids = set()
@@ -186,11 +187,14 @@ class Controller:
             if role == 'agent' and op == 'foreground':
                 self.agent_pids.add(pid)
                 self.agents[pid] = {'time': mono, 'fg': foreground_report(req.get('foreground')), 'session': process.username()}
+                if 'vision_login' in req:
+                    self.vision_login = req.get('vision_login') is True
                 summary = next((h for h in reversed(self.engine.state.get('study_history', []))
                                 if not h.get('shown') and (now - timestamp(h['ended'])).total_seconds() < 6 * 3600), None)
                 # Agent acknowledges display and execution; the service remains the authority.
                 return {'pending': [dict(p, remaining=max(0, (timestamp(p['due'])-now).total_seconds())) for p in self.pending.values()], 'events': self.events[-5:],
-                        'study': self.study_view(now), 'summary': summary, 'vision_ready': self.vision_key() is not None}
+                        'study': self.study_view(now), 'summary': summary,
+                        'vision_ready': self.vision_login or self.vision_key() is not None}
             if role == 'agent' and op == 'vision_config':
                 if not self.engine.study(now):
                     raise ValueError('Kein Lernmodus aktiv.')
@@ -223,7 +227,8 @@ class Controller:
                         'extension_path': str(app_dir() / 'extensions'),
                         'study': self.study_view(now), 'study_history': self.engine.state.get('study_history', [])[-5:],
                         'study_stop_sentence': STUDY_STOP_SENTENCE, 'study_stop_wait': STUDY_STOP_WAIT,
-                        'vision_ready': self.vision_key() is not None,
+                        'vision_ready': self.vision_login or self.vision_key() is not None,
+                        'vision_login': self.vision_login, 'vision_key': self.vision_key() is not None,
                         'vision_model': self.engine.state.get('vision_model', VISION_MODELS[0]), 'vision_models': list(VISION_MODELS)}
             if op == 'study_stop_request':
                 return {'ok': True, 'wait': self.study_change(lambda: self.engine.study_stop_request(now))}

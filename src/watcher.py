@@ -9,6 +9,8 @@ import ctypes
 from ctypes import wintypes
 import io
 import json
+import os
+from pathlib import Path
 import random
 
 MAX_EDGE = 1568
@@ -144,9 +146,56 @@ def assess(key, model, goal, jpeg, context, client_factory=None):
     return parse(response), usage_of(response)
 
 
+def login_dir():
+    """Folder of the signed-in user's `ant auth login` profile, or None when there is no login.
+
+    The session agent runs as SYSTEM inside the user's session, so the user's roaming folder
+    is looked up through the session's own token instead of this process's environment.
+    """
+    base = None
+    try:
+        import win32process
+        import win32profile
+        import win32ts
+        session = win32process.ProcessIdToSessionId(os.getpid())
+        token = win32ts.WTSQueryUserToken(session)
+        try:
+            base = Path(win32profile.GetUserProfileDirectory(token)) / 'AppData' / 'Roaming'
+        finally:
+            token.Close()
+    except Exception:
+        base = Path(os.environ['APPDATA']) if os.environ.get('APPDATA') else None  # ordinary user process
+    if not base:
+        return None
+    folder = base / 'Anthropic'
+    try:
+        pointer = folder / 'active_config'
+        profile = (pointer.read_text('utf-8').strip() if pointer.is_file() else '') or 'default'
+        if (folder / 'configs' / (profile + '.json')).is_file() and (folder / 'credentials' / (profile + '.json')).is_file():
+            return folder
+    except OSError:
+        pass
+    return None
+
+
+def make_client(key, client_factory=None):
+    """A stored API key wins; otherwise the SDK uses the user's `ant auth login` profile."""
+    import anthropic
+    factory = client_factory or anthropic.Anthropic
+    if key:
+        return factory(api_key=key, max_retries=2, timeout=90.0)
+    folder = login_dir()
+    if not folder:
+        raise RuntimeError('Weder Anmeldung noch API-Schlüssel vorhanden.')
+    os.environ['ANTHROPIC_CONFIG_DIR'] = str(folder)
+    for name in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'):
+        os.environ.pop(name, None)  # a stray variable would silently outrank the login
+    return factory(max_retries=2, timeout=90.0)
+
+
 def request_assessment(key, model, goal, jpeg, context, client_factory=None):
     import anthropic
-    client = (client_factory or anthropic.Anthropic)(api_key=key, max_retries=2, timeout=90.0)
+    client = make_client(key, client_factory)
     content = [
         {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg',
                                      'data': base64.standard_b64encode(jpeg).decode('ascii')}},

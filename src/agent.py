@@ -45,10 +45,14 @@ def run_agent():
     state = {'pending': [], 'connected': False, 'last': 0, 'study': None, 'summary': None, 'vision_ready': False}
     executed = {}
     ui = queue.Queue()
+    login = {'checked': -100.0, 'found': False}
     def observe():
         while True:
             try:
-                answer = request({'op': 'foreground', 'foreground': foreground()})
+                if time.monotonic() - login['checked'] > 10:
+                    from watcher import login_dir
+                    login.update(checked=time.monotonic(), found=login_dir() is not None)
+                answer = request({'op': 'foreground', 'foreground': foreground(), 'vision_login': login['found']})
                 state.update(pending=answer.get('pending', []), connected=True, last=time.monotonic(),
                              study=answer.get('study'), summary=answer.get('summary'),
                              vision_ready=bool(answer.get('vision_ready')))
@@ -303,6 +307,7 @@ class StudyWatcher:
         self.start_window = None
         self.summary_shown = set()
         self.companion = None
+        self.auth_warned = None
 
     # Runs on the Tk thread every 500 ms.
     def tick(self):
@@ -317,10 +322,10 @@ class StudyWatcher:
                 self.companion.show('wach')
             self.due = time.monotonic() + self.pace.next_delay()
             log('Lernmodus erkannt; Aufpasser %s, erste Prüfung in %d s.' % (
-                'an' if self.state['vision_ready'] else 'aus (kein Schlüssel)', self.due - time.monotonic()))
+                'an' if self.state['vision_ready'] else 'aus (keine Anmeldung, kein Schlüssel)', self.due - time.monotonic()))
             if not self.state['vision_ready']:
-                self.show_info('Lernmodus läuft', 'Der Aufpasser ist aus, weil noch kein API-Schlüssel hinterlegt ist. '
-                               'Die Sperren gelten trotzdem.', 'Schlüssel: FokusWache → Browser & Schutz')
+                self.show_info('Lernmodus läuft', 'Der Aufpasser ist aus, weil weder eine Anmeldung (ant auth login) noch ein '
+                               'API-Schlüssel vorhanden ist. Die Sperren gelten trotzdem.', 'Einrichten: FokusWache → Browser & Schutz')
         elif not study and self.session:
             self.session = None
             if self.nudge:
@@ -344,20 +349,27 @@ class StudyWatcher:
         try:
             from watcher import assess, capture, foreground_context
             config = request({'op': 'vision_config'})
-            if config.get('key'):
-                jpeg = capture()
-                try:
-                    result, tokens = assess(config['key'], config['model'], goal, jpeg, foreground_context())
-                finally:
-                    del jpeg
+            jpeg = capture()
+            try:
+                result, tokens = assess(config.get('key'), config['model'], goal, jpeg, foreground_context())
+            finally:
+                del jpeg
         except Exception as error:
             result, problem = None, type(error).__name__ + ': ' + str(error)[:160]
             log('Prüfung fehlgeschlagen: ' + problem)
+            if type(error).__name__ in ('AuthenticationError', 'PermissionDeniedError', 'CredentialsError', 'WorkloadIdentityError'):
+                self.ui.put(lambda: self.auth_problem(sid))
         else:
             problem = 'Keine eindeutige Antwort.'
             if result is None:
                 log('Prüfung ohne eindeutige Antwort.')
         self.ui.put(lambda: self.checked(sid, result, problem, tokens))
+
+    def auth_problem(self, sid):
+        if sid == self.session and sid != self.auth_warned:
+            self.auth_warned = sid
+            self.show_info('Aufpasser braucht eine neue Anmeldung', 'Die Claude-Anmeldung wurde abgelehnt oder ist abgelaufen. '
+                           'Die Sperren gelten weiter.', 'Im Terminal „ant auth login“ ausführen oder den API-Schlüssel prüfen.')
 
     def checked(self, sid, result, problem, tokens=None):
         from watcher import is_drift

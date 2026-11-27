@@ -45,7 +45,7 @@ class StudyStart(QDialog):
                       + MODEL_NAMES.get(status.get('vision_model'), 'Claude').split(' (')[0]
                       + ' bewerten. Das Bild wird nicht gespeichert.')
         else:
-            aware += '\n\nDer Aufpasser ist aus: Unter „Browser & Schutz“ ist noch kein API-Schlüssel hinterlegt.'
+            aware += '\n\nDer Aufpasser ist aus: Es gibt weder eine Anmeldung (ant auth login) noch einen API-Schlüssel. Details unter „Browser & Schutz“.'
         layout.addWidget(label(aware, 'muted'))
         self.message = label('', 'muted')
         layout.addWidget(self.message)
@@ -209,7 +209,9 @@ class VisionCard:
                              'die Claude-API bewerten. Was gerade auf dem Bildschirm ist, wird dafür an Anthropic gesendet. '
                              'Das Bild wird nicht gespeichert; übrig bleibt nur die Kurzstatistik. Außerhalb des Lernmodus '
                              'werden keine Bilder gemacht.', 'muted'))
-        self.state = label('', 'muted')
+        info.addWidget(label('Zugang: Am einfachsten einmal im Terminal „ant auth login“ ausführen; FokusWache nutzt dann diese '
+                             'Anmeldung. Alternativ unten einen API-Schlüssel eintragen (er hat dann Vorrang).', 'muted'))
+        self.state = label('')
         info.addWidget(self.state)
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.Password)
@@ -231,13 +233,16 @@ class VisionCard:
 
     def render(self, status):
         ready = status.get('vision_ready')
-        self.state.setText('Schlüssel hinterlegt (verschlüsselt im Dienst).' if ready else 'Noch kein Schlüssel hinterlegt. Ohne Schlüssel gelten im Lernmodus nur die Sperren.')
+        has_key, has_login = status.get('vision_key'), status.get('vision_login')
+        self.state.setText('● Aufpasser bereit: API-Schlüssel hinterlegt (verschlüsselt im Dienst).' if has_key else
+                           '● Aufpasser bereit: Anmeldung über „ant auth login“ gefunden.' if has_login else
+                           '○ Aufpasser aus: keine Anmeldung und kein Schlüssel. Im Lernmodus gelten dann nur die Sperren.')
         model = status.get('vision_model')
         if model != self.synced and self.model.findData(model) >= 0:
             self.model.setCurrentIndex(self.model.findData(model))
             self.synced = model
         studying = bool(status.get('study'))
-        self.clear_button.setEnabled(bool(ready) and not studying and self.app.connected)
+        self.clear_button.setEnabled(bool(has_key) and not studying and self.app.connected)
         self.save_button.setEnabled(self.app.connected)
         self.key.setEnabled(not studying)
 

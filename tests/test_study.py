@@ -285,6 +285,62 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(max(Image.open(io.BytesIO(jpeg)).size), watcher.MAX_EDGE)
 
 
+class LoginTests(unittest.TestCase):
+    def profile(self, folder, name='default', pointer=None):
+        base = Path(folder, 'Anthropic')
+        for part in ('configs', 'credentials'):
+            (base / part).mkdir(parents=True, exist_ok=True)
+            (base / part / (name + '.json')).write_text('{}', 'utf-8')
+        if pointer:
+            (base / 'active_config').write_text(pointer, 'utf-8')
+        return base
+
+    def test_login_is_found_only_with_config_and_credentials_of_the_active_profile(self):
+        with tempfile.TemporaryDirectory() as folder, patch('win32ts.WTSQueryUserToken', side_effect=OSError),              patch.dict(os.environ, {'APPDATA': folder}):
+            self.assertIsNone(watcher.login_dir())
+            base = self.profile(folder)
+            self.assertEqual(watcher.login_dir(), base)
+            (base / 'credentials' / 'default.json').unlink()
+            self.assertIsNone(watcher.login_dir())
+            self.profile(folder, 'arbeit', pointer='arbeit ')
+            self.assertEqual(watcher.login_dir(), base)
+            (base / 'active_config').write_text('fehlt', 'utf-8')
+            self.assertIsNone(watcher.login_dir())
+
+    def test_key_wins_and_login_is_used_without_one(self):
+        calls = []
+        factory = lambda **kwargs: calls.append(kwargs) or Mock()
+        with tempfile.TemporaryDirectory() as folder, patch('win32ts.WTSQueryUserToken', side_effect=OSError),              patch.dict(os.environ, {'APPDATA': folder, 'ANTHROPIC_API_KEY': 'stale'}):
+            with self.assertRaises(RuntimeError):
+                watcher.make_client(None, factory)
+            watcher.make_client('sk-key', factory)
+            self.assertEqual(calls[-1]['api_key'], 'sk-key')
+            base = self.profile(folder)
+            watcher.make_client(None, factory)
+            self.assertNotIn('api_key', calls[-1])
+            self.assertEqual(os.environ['ANTHROPIC_CONFIG_DIR'], str(base))
+            self.assertNotIn('ANTHROPIC_API_KEY', os.environ)
+            os.environ.pop('ANTHROPIC_CONFIG_DIR', None)
+
+    def test_service_is_ready_with_a_login_reported_by_the_agent(self):
+        with tempfile.TemporaryDirectory() as folder, patch('service.installed_games', return_value=[]):
+            c = Controller(folder, enforce=False)
+            client = Mock()
+            client.username.return_value = 'user'
+            def call(role, req):
+                with patch.object(c, 'role', return_value=(role, client)):
+                    return c.handle(req, os.getpid())
+            self.assertFalse(call('ui', {'op': 'status'})['vision_ready'])
+            answer = call('agent', {'op': 'foreground', 'foreground': {'pid': 0, 'idle': 0}, 'vision_login': True})
+            self.assertTrue(answer['vision_ready'])
+            status = call('ui', {'op': 'status'})
+            self.assertEqual((status['vision_ready'], status['vision_login'], status['vision_key']), (True, True, False))
+            call('agent', {'op': 'study_start', 'minutes': 25, 'goal': 'Lernen'})
+            self.assertIsNone(call('agent', {'op': 'vision_config'})['key'])
+            call('agent', {'op': 'foreground', 'foreground': {'pid': 0, 'idle': 0}, 'vision_login': 'ja'})
+            self.assertFalse(call('ui', {'op': 'status'})['vision_login'])
+
+
 class MascotTests(unittest.TestCase):
     def test_every_mood_is_a_complete_distinct_face(self):
         import mascot
