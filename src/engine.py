@@ -12,6 +12,12 @@ from zoneinfo import ZoneInfo
 UTC = dt.timezone.utc
 ZONE = ZoneInfo('Europe/Berlin')
 WEB_HOST = re.compile(r'[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.?')
+# Internet and device rules stay out of the learning session: they would cut off
+# online learning material and the image check, or lock the computer.
+STUDY_KINDS = ('web', 'apps', 'games')
+STUDY_MIN_MINUTES, STUDY_MAX_MINUTES = 1, 240
+STUDY_STOP_WAIT, STUDY_STOP_WINDOW = 60, 300
+STUDY_STOP_SENTENCE = 'Ich beende meine Lernzeit jetzt bewusst vorzeitig.'
 
 def timestamp(value):
     if not value:
@@ -169,19 +175,102 @@ class Engine:
 
     def rules(self, now):
         result = []
+        study = self.study(now)
         for rule in self.state['rules']:
             r = copy.deepcopy(rule)
             r['used_seconds'] = self.used(r['id'], now)
             r['blocked'], r['reason'] = decision(r, r['used_seconds'], now)
             r['locked'] = locked(r, now)
+            if study and r['kind'] in STUDY_KINDS:
+                # The learning session overlays the stored rule; the stored rule itself never changes.
+                r['study_forced'] = not r['enabled']
+                r['enabled'] = r['blocked'] = r['locked'] = True
+                r['reason'] = 'Lernmodus'
             result.append(r)
         return result
+
+    # Learning session ("Lernmodus"): a timed overlay over every web, app and game rule.
+    def study(self, now):
+        s = self.state.get('study')
+        return s if s and now < timestamp(s['until']) else None
+
+    def study_start(self, minutes, goal, now):
+        if self.study(now):
+            raise ValueError('Der Lernmodus läuft bereits.')
+        self.study_expire(now)
+        if type(minutes) is not int or not STUDY_MIN_MINUTES <= minutes <= STUDY_MAX_MINUTES:
+            raise ValueError(f'Lernzeit: {STUDY_MIN_MINUTES} bis {STUDY_MAX_MINUTES} Minuten.')
+        goal = ' '.join(str(goal or '').split())
+        if not goal or len(goal) > 200:
+            raise ValueError('Bitte in einem Satz angeben, woran du arbeitest (höchstens 200 Zeichen).')
+        self.state['study'] = {'id': str(uuid.uuid4()), 'goal': goal, 'minutes': minutes,
+                               'started': now.isoformat(), 'until': (now + dt.timedelta(minutes=minutes)).isoformat(),
+                               'checks': 0, 'drifts': 0, 'places': {}, 'stop_requested': None}
+        return self.state['study']
+
+    def study_report(self, on_task, place, now):
+        s = self.study(now)
+        if not s:
+            raise ValueError('Kein Lernmodus aktiv.')
+        if type(on_task) is not bool:
+            raise ValueError('Ungültige Auswertung.')
+        s['checks'] += 1
+        if not on_task:
+            s['drifts'] += 1
+            place = ' '.join(str(place or 'Unklar').split())[:40] or 'Unklar'
+            if place in s['places'] or len(s['places']) < 20:
+                s['places'][place] = s['places'].get(place, 0) + 1
+
+    def study_stop_request(self, now):
+        s = self.study(now)
+        if not s:
+            raise ValueError('Kein Lernmodus aktiv.')
+        s['stop_requested'] = now.isoformat()
+        return STUDY_STOP_WAIT
+
+    def study_stop(self, sentence, now):
+        s = self.study(now)
+        if not s:
+            raise ValueError('Kein Lernmodus aktiv.')
+        asked = timestamp(s.get('stop_requested'))
+        if not asked or now < asked:
+            raise ValueError('Vorzeitiges Beenden zuerst anfragen.')
+        if (now - asked).total_seconds() < STUDY_STOP_WAIT:
+            raise ValueError(f'Noch {math.ceil(STUDY_STOP_WAIT - (now - asked).total_seconds())} Sekunden Wartezeit.')
+        if (now - asked).total_seconds() > STUDY_STOP_WINDOW:
+            s['stop_requested'] = None
+            raise ValueError('Die Anfrage ist abgelaufen. Bitte erneut anfragen.')
+        if ' '.join(str(sentence or '').split()) != STUDY_STOP_SENTENCE:
+            raise ValueError('Der Satz stimmt nicht genau überein.')
+        return self.study_finish(now, early=True)
+
+    def study_expire(self, now):
+        s = self.state.get('study')
+        if s and now >= timestamp(s['until']):
+            return self.study_finish(timestamp(s['until']), early=False)
+        return None
+
+    def study_finish(self, end, early):
+        s = self.state.pop('study')
+        started = timestamp(s['started'])
+        summary = {'id': s['id'], 'goal': s['goal'], 'started': s['started'], 'ended': end.isoformat(),
+                   'planned_minutes': s['minutes'], 'minutes': round(max(0, (end - started).total_seconds()) / 60, 1),
+                   'checks': s['checks'], 'drifts': s['drifts'], 'places': s['places'], 'early': early, 'shown': False}
+        history = self.state.setdefault('study_history', [])
+        history.append(summary)
+        del history[:-100]
+        return summary
+
+    def study_locked(self, rule, now):
+        return bool(self.study(now)) and rule['kind'] in STUDY_KINDS
 
     def save(self, raw, now):
         r = validate_rule(raw)
         old = next((x for x in self.state['rules'] if x['id'] == r['id']), None)
         if old and locked(old, now):
             raise ValueError('Diese Regel ist bis zum Ablauf verriegelt.')
+        if old and self.study_locked(old, now):
+            raise ValueError('Während des Lernmodus lassen sich diese Regeln nicht ändern.')
         if old:
             r['locked_until'], r['timer_until'] = old['locked_until'], old['timer_until']
             self.state['rules'][self.state['rules'].index(old)] = r
@@ -196,6 +285,8 @@ class Engine:
             raise ValueError('Regel nicht gefunden.')
         if locked(r, now):
             raise ValueError('Diese Regel ist bis zum Ablauf verriegelt.')
+        if op == 'delete' and self.study_locked(r, now):
+            raise ValueError('Während des Lernmodus lassen sich diese Regeln nicht löschen.')
         if op == 'delete':
             self.state['rules'].remove(r)
         elif op == 'lock':

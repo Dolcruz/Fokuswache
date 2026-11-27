@@ -19,6 +19,26 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def runtime_closure(*roots):
+    """Installed distributions the learning-session watcher bundles (ignoring optional extras)."""
+    seen, todo = [], list(roots)
+    while todo:
+        name = todo.pop()
+        try:
+            dist = metadata.distribution(name)
+        except metadata.PackageNotFoundError:
+            continue
+        canonical = dist.metadata['Name']
+        if canonical in seen:
+            continue
+        seen.append(canonical)
+        for requirement in dist.requires or []:
+            if 'extra ==' in requirement:
+                continue
+            todo.append(re.split(r'[\s;<>=!~\[(]', requirement, maxsplit=1)[0])
+    return seen
+
+
 def package(version):
     licenses = ROOT / 'app/licenses'
     licenses.mkdir(parents=True, exist_ok=True)
@@ -43,7 +63,7 @@ def package(version):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with bundle.extractfile(member) as stream, target.open('wb') as output:
                     shutil.copyfileobj(stream, output)
-    for name in ('psutil', 'pywin32', 'tzdata', 'PySide6-Essentials', 'shiboken6'):
+    for name in ('psutil', 'pywin32', 'tzdata', 'PySide6-Essentials', 'shiboken6', *runtime_closure('anthropic', 'pillow')):
         dist = metadata.distribution(name)
         for file in dist.files or []:
             path = PurePosixPath(str(file))

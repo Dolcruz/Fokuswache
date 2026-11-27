@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabe
 from ipc import request
 from engine import validate_rule
 from journal_ui import JournalPage
+from study_ui import StudyBanner, StudyStart, VisionCard
 
 KINDS = {'web': 'Webseiten', 'apps': 'Programme', 'games': 'Spiele',
          'internet': 'Gesamtes Internet', 'device': 'Computer'}
@@ -474,7 +475,8 @@ class RuleCard(QFrame):
         self.usage.setText((f'{max(0, quota - used / 60):.1f} min übrig   /   {quota:g} min pro Tag' if quota else 'Zeitplan aktiv' if rule['schedules'] else 'Dauersperre' if not rule.get('timer_until') else 'Fokus-Timer') if enabled else 'Pausiert · Keine Zeit wird gezählt')
         self.progress.setVisible(quota is not None)
         self.progress.setValue(min(1000, int(used / (quota * 60) * 1000)) if quota else 0)
-        self.detail.setText('Verriegelt bis ' + local_time(rule.get('locked_until')) if rule.get('locked') else rule.get('reason', 'Bereit') if enabled else 'Aktivieren, sobald du bereit bist.')
+        self.detail.setText('Gesperrt, solange der Lernmodus läuft.' if rule.get('reason') == 'Lernmodus' else
+                            'Verriegelt bis ' + local_time(rule.get('locked_until')) if rule.get('locked') else rule.get('reason', 'Bereit') if enabled else 'Aktivieren, sobald du bereit bist.')
         self.toggle_button.setText('Pausieren' if enabled else 'Aktivieren')
         self.toggle_button.setEnabled(self.app.connected and not self.app.pending and not rule.get('locked'))
 
@@ -550,10 +552,15 @@ class Application(QMainWindow):
         layout = column(page)
         top = QHBoxLayout()
         top.addWidget(label('Dein Fokus. Deine Regeln.', 'title'), 1)
+        self.study_button = button('Lernmodus', self.start_study, True)
+        top.addWidget(self.study_button)
         self.new_button = button('+ Neue Regel', lambda: self.navigate(1), True)
         top.addWidget(self.new_button)
         layout.addLayout(top)
         layout.addWidget(label('Bewusst entscheiden, wie du deine Zeit verbringst.', 'muted'))
+        self.study_banner = StudyBanner(self)
+        self.study_banner.setVisible(False)
+        layout.addWidget(self.study_banner)
         hero = QFrame()
         hero.setObjectName('hero')
         hero_layout = QHBoxLayout(hero)
@@ -625,6 +632,7 @@ class Application(QMainWindow):
         info.addWidget(label('Chrome, Edge, Brave und Comet: Entwicklermodus in der Erweiterungsverwaltung einschalten und den Ordner „chromium“ als entpackte Erweiterung laden. Firefox: Die enthaltene Test-Erweiterung gilt nur bis zum Browser-Neustart.', 'muted'))
         info.addWidget(button('Erweiterungsordner öffnen', self.open_extensions))
         cells.addWidget(box)
+        self.vision = VisionCard(self, cells)
         self.browser_status = label('Noch keine Statusmeldung.', 'muted')
         box, info = card()
         info.addWidget(label('Aktueller Status', 'heading'))
@@ -662,6 +670,9 @@ class Application(QMainWindow):
     def controls(self):
         for b in self.template_buttons:
             b.setEnabled(self.connected and not self.pending)
+        studying = bool(self.status.get('study'))
+        self.study_button.setText('Lernmodus läuft' if studying else 'Lernmodus')
+        self.study_button.setEnabled(self.connected and not self.pending and not studying)
         for obj in self.cards.values():
             obj.update_rule(obj.rule)
 
@@ -703,7 +714,13 @@ class Application(QMainWindow):
         events = '\n'.join(f"{local_time(e.get('time'))}   {e.get('message', '')}" for e in reversed(status.get('events', [])))
         if self.events.toPlainText() != events:
             self.events.setPlainText(events)
+        self.study_banner.render(status)
+        self.vision.render(status)
         self.controls()
+
+    def start_study(self):
+        if self.connected and not self.status.get('study'):
+            StudyStart(self).exec()
 
     def filter_cards(self):
         visible = 0
@@ -762,7 +779,9 @@ class Application(QMainWindow):
             layout.addWidget(label('Ziele\n' + '\n'.join(rule['targets']), 'muted'))
         if rule['exceptions']:
             layout.addWidget(label('Ausnahmen\n' + '\n'.join(rule['exceptions']), 'muted'))
-        if rule.get('locked'):
+        if rule.get('reason') == 'Lernmodus':
+            layout.addWidget(label('Der Lernmodus sperrt diese Regel gerade. Änderungen sind möglich, sobald er endet.'))
+        elif rule.get('locked'):
             layout.addWidget(label('Verriegelt bis ' + local_time(rule['locked_until']) + '. Änderungen sind bis dahin gesperrt.'))
         else:
             edit = button('Regel bearbeiten', lambda: (dialog.accept(), self.editor(rule)))

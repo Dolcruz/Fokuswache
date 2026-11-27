@@ -20,12 +20,14 @@ import win32service
 import win32serviceutil
 import servicemanager
 
-from engine import Engine, UTC, decision, locked, path_match, presets, timestamp, web_match
+from engine import (Engine, UTC, decision, locked, path_match, presets, timestamp, web_match,
+                    STUDY_STOP_SENTENCE, STUDY_STOP_WAIT)
 from ipc import PIPE, MAX_MESSAGE
 from windows import Firewall, app_dir, browser_ancestor, browser_root, is_browser_exe, installed_games, terminate, ensure_session_agents
 
 DATA = Path(os.environ.get('PROGRAMDATA', r'C:\ProgramData')) / 'FokusWache'
 BROWSER_CONNECTION_LEASE = 12
+VISION_MODELS = ('claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5')
 
 def foreground_report(raw):
     """Keep only the fields ticks evaluate; a malformed report counts as no foreground and idle."""
@@ -97,6 +99,47 @@ class Controller:
         self.events.append({'time': self.now().astimezone().isoformat(), 'message': message})
         self.events = self.events[-100:]
 
+    def vision_key(self):
+        """API key for the learning watcher; DPAPI-protected, never part of state.json."""
+        path = self.data / 'vision.key'
+        if not path.exists():
+            return None
+        import win32crypt
+        try:
+            return win32crypt.CryptUnprotectData(path.read_bytes(), None, None, None, 0)[1].decode('utf-8')
+        except Exception:
+            return None
+
+    def set_vision_key(self, key):
+        path = self.data / 'vision.key'
+        if key is None:
+            path.unlink(missing_ok=True)
+            return
+        import win32crypt
+        # CRYPTPROTECT_LOCAL_MACHINE: the service and its SYSTEM session agent can both decrypt it.
+        path.write_bytes(win32crypt.CryptProtectData(key.encode('utf-8'), 'FokusWache', None, None, None, 0x4))
+
+    def study_view(self, now):
+        s = self.engine.study(now)
+        if not s:
+            return None
+        return {'id': s['id'], 'goal': s['goal'], 'minutes': s['minutes'], 'started': s['started'], 'until': s['until'],
+                'remaining': max(0, (timestamp(s['until']) - now).total_seconds()),
+                'checks': s['checks'], 'drifts': s['drifts'], 'places': s['places'],
+                'stop_requested': s.get('stop_requested')}
+
+    def study_change(self, change, message=None):
+        before = copy.deepcopy(self.engine.state)
+        try:
+            result = change()
+            if message:
+                self.event(message)
+            self.persist()
+            return result
+        except Exception:
+            self.engine.state = before
+            raise
+
     def role(self, pid):
         p = psutil.Process(pid)
         expected = Path(sys.executable).resolve()
@@ -142,8 +185,32 @@ class Controller:
             if role == 'agent' and op == 'foreground':
                 self.agent_pids.add(pid)
                 self.agents[pid] = {'time': mono, 'fg': foreground_report(req.get('foreground')), 'session': process.username()}
+                summary = next((h for h in reversed(self.engine.state.get('study_history', []))
+                                if not h.get('shown') and (now - timestamp(h['ended'])).total_seconds() < 6 * 3600), None)
                 # Agent acknowledges display and execution; the service remains the authority.
-                return {'pending': [dict(p, remaining=max(0, (timestamp(p['due'])-now).total_seconds())) for p in self.pending.values()], 'events': self.events[-5:]}
+                return {'pending': [dict(p, remaining=max(0, (timestamp(p['due'])-now).total_seconds())) for p in self.pending.values()], 'events': self.events[-5:],
+                        'study': self.study_view(now), 'summary': summary, 'vision_ready': self.vision_key() is not None}
+            if role == 'agent' and op == 'vision_config':
+                if not self.engine.study(now):
+                    raise ValueError('Kein Lernmodus aktiv.')
+                return {'key': self.vision_key(), 'model': self.engine.state.get('vision_model', VISION_MODELS[0])}
+            if role == 'agent' and op == 'study_report':
+                s = self.engine.study(now)
+                if not s or req.get('study') != s['id']:
+                    return {'ok': False}
+                self.study_change(lambda: self.engine.study_report(req.get('on_task'), req.get('place'), now))
+                return {'ok': True}
+            if role == 'agent' and op == 'study_ack':
+                for h in self.engine.state.get('study_history', []):
+                    if h['id'] == req.get('id'):
+                        h['shown'] = True
+                self.persist()
+                return {'ok': True}
+            if role in ('agent', 'ui') and op == 'study_start':
+                started = self.study_change(lambda: self.engine.study_start(req.get('minutes'), req.get('goal'), now))
+                self.event('Lernmodus gestartet (%d Minuten).' % started['minutes'])
+                self.persist()
+                return {'ok': True, 'study': self.study_view(now)}
             if role != 'ui':
                 raise ValueError('Operation für diesen Client nicht erlaubt.')
             if op == 'status':
@@ -152,7 +219,31 @@ class Controller:
                         'sample_interval': self.sample_interval,
                         'activity': [{'pid': a['fg'].get('pid'), 'idle': a['fg'].get('idle'), 'age': mono-a['time']} for a in self.agents.values()],
                         'protection': 'Windows-Dienst', 'errors': self.errors,
-                        'extension_path': str(app_dir() / 'extensions')}
+                        'extension_path': str(app_dir() / 'extensions'),
+                        'study': self.study_view(now), 'study_history': self.engine.state.get('study_history', [])[-5:],
+                        'study_stop_sentence': STUDY_STOP_SENTENCE, 'study_stop_wait': STUDY_STOP_WAIT,
+                        'vision_ready': self.vision_key() is not None,
+                        'vision_model': self.engine.state.get('vision_model', VISION_MODELS[0]), 'vision_models': list(VISION_MODELS)}
+            if op == 'study_stop_request':
+                return {'ok': True, 'wait': self.study_change(lambda: self.engine.study_stop_request(now))}
+            if op == 'study_stop':
+                self.study_change(lambda: self.engine.study_stop(req.get('sentence'), now), 'Lernmodus vorzeitig beendet.')
+                return {'ok': True}
+            if op == 'vision_set':
+                model = req.get('model', self.engine.state.get('vision_model', VISION_MODELS[0]))
+                if model not in VISION_MODELS:
+                    raise ValueError('Unbekanntes Modell.')
+                key = req.get('key')
+                if key is not None and (not isinstance(key, str) or not 20 <= len(key.strip()) <= 400 or any(c.isspace() for c in key.strip())):
+                    raise ValueError('Der API-Schlüssel sieht ungültig aus.')
+                if self.engine.study(now) and (key is not None or req.get('clear')):
+                    raise ValueError('Den Schlüssel bitte außerhalb des Lernmodus ändern.')
+                if req.get('clear'):
+                    self.set_vision_key(None)
+                elif key is not None:
+                    self.set_vision_key(key.strip())
+                self.study_change(lambda: self.engine.state.__setitem__('vision_model', model), 'Aufpasser-Einstellungen gespeichert.')
+                return {'ok': True}
             if op not in ('save', 'delete', 'lock', 'timer'):
                 raise ValueError('Unbekannte Operation.')
             before = copy.deepcopy(self.engine.state)
@@ -184,8 +275,12 @@ class Controller:
                 self.last_discovery = mono
             self.hosts = {pid: h for pid, h in self.hosts.items() if mono - h['time'] < 3 and psutil.pid_exists(pid)}
             self.agents = {pid: a for pid, a in self.agents.items() if mono - a['time'] < 3 and psutil.pid_exists(pid)}
+            if self.engine.study_expire(now):
+                self.event('Lernmodus beendet.')
             rules = self.engine.rules(now)
             active_rules = [r for r in rules if r['enabled']]
+            # Rules switched on only by the learning session keep their stored budgets untouched.
+            counted_rules = [r for r in active_rules if not r.get('study_forced')]
             ids = set()
             foregrounds = [a['fg'] for a in self.agents.values()]
             foregrounds += [h['fg'] for h in self.hosts.values()]
@@ -193,7 +288,7 @@ class Controller:
                 try:
                     p = psutil.Process(int(fg.get('pid', 0)))
                     path = p.exe()
-                    for r in active_rules:
+                    for r in counted_rules:
                         if r['kind'] in ('apps', 'games') and self.app_matches(r, path):
                             ids.add(r['id'])
                         if r['kind'] in ('device', 'internet') and fg.get('idle', 999) < 60:
@@ -209,7 +304,7 @@ class Controller:
                         continue
                 except psutil.Error:
                     continue
-                for r in active_rules:
+                for r in counted_rules:
                     if r['kind'] == 'web' and web_match(r, h['url']):
                         ids.add(r['id'])
             # Require activity at both boundaries; never charge time asleep or offline.
