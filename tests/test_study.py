@@ -8,7 +8,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from engine import Engine, UTC, STUDY_STOP_SENTENCE, STUDY_STOP_WAIT, validate_rule
 from service import Controller
@@ -290,10 +290,29 @@ class WatcherTests(unittest.TestCase):
 class LoginTests(unittest.TestCase):
     def test_user_folder_is_found_without_the_session_token(self):
         # An ordinary process may not query the session token; the profile list still names the signed-in user.
-        with patch('win32ts.WTSQueryUserToken', side_effect=OSError('1314')), patch.dict(os.environ, {'APPDATA': r'C:\falsch'}):
+        key = MagicMock()
+        key.__enter__.return_value = key
+        with patch('win32ts.WTSQueryUserToken', side_effect=OSError('1314')), \
+                patch('win32ts.WTSQuerySessionInformation', side_effect=['lena', 'PC']) as asked, \
+                patch('win32security.LookupAccountName', return_value=('sid', 'PC', 1)) as looked, \
+                patch('win32security.ConvertSidToStringSid', return_value='S-1-5-21-7'), \
+                patch('winreg.OpenKey', return_value=key) as opened, \
+                patch('winreg.QueryValueEx', return_value=(r'D:\Profile\lena', 2)), \
+                patch.dict(os.environ, {'APPDATA': r'C:\falsch'}):
             folder, how = watcher.session_appdata()
         self.assertEqual(how, 'Profilliste')
-        self.assertEqual(folder, Path.home() / 'AppData' / 'Roaming')
+        self.assertEqual(folder, Path(r'D:\Profile\lena') / 'AppData' / 'Roaming')
+        self.assertEqual(asked.call_count, 2)
+        self.assertTrue(opened.call_args[0][1].endswith('ProfileList\\S-1-5-21-7'))
+        self.assertEqual(looked.call_args[0][1].split(chr(92)), ['PC', 'lena'])
+
+    def test_user_folder_falls_back_to_the_environment(self):
+        with patch('win32ts.WTSQueryUserToken', side_effect=OSError('1314')), \
+                patch('win32ts.WTSQuerySessionInformation', side_effect=OSError('5')), \
+                patch.dict(os.environ, {'APPDATA': r'C:\Nutzer\Roaming'}):
+            folder, how = watcher.session_appdata()
+        self.assertEqual(folder, Path(r'C:\Nutzer\Roaming'))
+        self.assertTrue(how.startswith('Umgebung'))
 
     def profile(self, folder, name='default', pointer=None):
         base = Path(folder, 'Anthropic')
