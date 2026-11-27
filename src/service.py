@@ -126,7 +126,7 @@ class Controller:
         return {'id': s['id'], 'goal': s['goal'], 'minutes': s['minutes'], 'started': s['started'], 'until': s['until'],
                 'remaining': max(0, (timestamp(s['until']) - now).total_seconds()),
                 'checks': s['checks'], 'drifts': s['drifts'], 'places': s['places'],
-                'stop_requested': s.get('stop_requested')}
+                'tokens': s.get('tokens', {'in': 0, 'out': 0}), 'stop_requested': s.get('stop_requested')}
 
     def study_change(self, change, message=None):
         before = copy.deepcopy(self.engine.state)
@@ -158,7 +158,8 @@ class Controller:
             if not root:
                 raise ValueError('Browser-Herkunft konnte nicht bestätigt werden.')
             return 'native', root
-        if '--agent' in args:
+        # A --request client is a one-shot UI call even if '--agent' also appears in its arguments.
+        if '--agent' in args and '--request' not in args:
             return 'agent', p
         return 'ui', p
 
@@ -198,7 +199,7 @@ class Controller:
                 s = self.engine.study(now)
                 if not s or req.get('study') != s['id']:
                     return {'ok': False}
-                self.study_change(lambda: self.engine.study_report(req.get('on_task'), req.get('place'), now))
+                self.study_change(lambda: self.engine.study_report(req.get('on_task'), req.get('place'), now, req.get('tokens')))
                 return {'ok': True}
             if role == 'agent' and op == 'study_ack':
                 for h in self.engine.state.get('study_history', []):

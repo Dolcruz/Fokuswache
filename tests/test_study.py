@@ -54,6 +54,7 @@ class StudyEngineTests(unittest.TestCase):
         self.assertIsNone(e.study_expire(NOW + 24 * MIN))
         summary = e.study_expire(NOW + 26 * MIN)
         self.assertFalse(summary['early'])
+        self.assertNotIn('goal', summary)  # only the short statistics are kept
         self.assertEqual(summary['minutes'], 25)
         self.assertNotIn('study', e.state)
         after = e.rules(NOW + 26 * MIN)
@@ -107,6 +108,10 @@ class StudyEngineTests(unittest.TestCase):
         self.assertTrue(all(len(k) <= 40 for k in s['places']))
         with self.assertRaises(ValueError):
             e.study_report('ja', 'x', NOW)
+        e.study_report(None, '', NOW, {'in': 2000, 'out': 150})
+        e.study_report(True, '', NOW, {'in': 1000, 'out': 'x'})
+        self.assertEqual(s['tokens'], {'in': 3000, 'out': 150})
+        self.assertEqual(s['checks'], 5)
 
     def test_invalid_starts(self):
         e = engine_with_rules()
@@ -195,6 +200,21 @@ class StudyControllerTests(unittest.TestCase):
             self.assertFalse(Path(folder, 'vision.key').exists())
 
 
+class RoleTests(unittest.TestCase):
+    def test_request_client_never_gets_agent_role(self):
+        import sys as _sys
+        with tempfile.TemporaryDirectory() as folder, patch('service.installed_games', return_value=[]):
+            c = Controller(folder, enforce=False)
+            proc = Mock()
+            proc.exe.return_value = _sys.executable
+            script = str(Path(__file__).resolve().parents[1] / 'src' / 'main.py')
+            with patch('service.psutil.Process', return_value=proc), patch('service.sys.executable', _sys.executable):
+                proc.cmdline.return_value = [_sys.executable, script, '--request', 'a.json', '--response', 'b.json', '--agent']
+                self.assertEqual(c.role(1)[0], 'ui')
+                proc.cmdline.return_value = [_sys.executable, script, '--agent']
+                self.assertEqual(c.role(1)[0], 'agent')
+
+
 class WatcherTests(unittest.TestCase):
     def test_pace_shortens_after_drifting_and_lengthens_with_focus(self):
         pace = watcher.Pace(random.Random(1))
@@ -228,13 +248,15 @@ class WatcherTests(unittest.TestCase):
 
     def response(self, data, stop='end_turn'):
         block = types.SimpleNamespace(type='text', text=json.dumps(data))
-        return types.SimpleNamespace(stop_reason=stop, content=[types.SimpleNamespace(type='thinking'), block])
+        usage = types.SimpleNamespace(input_tokens=2100, output_tokens=180, cache_read_input_tokens=0, cache_creation_input_tokens=None)
+        return types.SimpleNamespace(stop_reason=stop, usage=usage, content=[types.SimpleNamespace(type='thinking'), block])
 
     def test_assess_parses_and_sends_only_the_expected_request(self):
         data = {'learning': False, 'confidence': 'hoch', 'place': 'YouTube', 'message': 'Du schaust gerade ein Video.'}
         factory = self.fake_client(self.response(data))
-        result = watcher.assess('k', 'claude-opus-5-5', 'IPI 9.2', b'\xff\xd8jpeg', 'Vordergrundprogramm: chrome.exe', factory)
+        result, tokens = watcher.assess('k', 'claude-opus-5-5', 'IPI 9.2', b'\xff\xd8jpeg', 'Vordergrundprogramm: chrome.exe', factory)
         self.assertEqual(result['place'], 'YouTube')
+        self.assertEqual(tokens, {'in': 2100, 'out': 180})
         call = factory().beta.messages.create.call_args.kwargs
         self.assertEqual(call['model'], 'claude-opus-5-5')
         self.assertEqual(call['output_config']['effort'], 'low')
@@ -245,10 +267,12 @@ class WatcherTests(unittest.TestCase):
 
     def test_haiku_has_no_fallback_and_refusal_is_unknown(self):
         factory = self.fake_client(self.response({}, stop='refusal'))
-        self.assertIsNone(watcher.assess('k', 'claude-haiku-5-5', 'x', b'j', 'c', factory))
+        result, tokens = watcher.assess('k', 'claude-haiku-5-5', 'x', b'j', 'c', factory)
+        self.assertIsNone(result)
+        self.assertEqual(tokens['out'], 180)
         factory().beta.messages.create.assert_not_called()
         bad = self.fake_client(self.response({'learning': 'yes', 'confidence': 'hoch', 'place': '', 'message': ''}))
-        self.assertIsNone(watcher.assess('k', 'claude-haiku-5-5', 'x', b'j', 'c', bad))
+        self.assertIsNone(watcher.assess('k', 'claude-haiku-5-5', 'x', b'j', 'c', bad)[0])
 
     def test_capture_stays_in_memory(self):
         from PIL import Image

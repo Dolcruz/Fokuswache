@@ -2,9 +2,12 @@
 import ctypes
 from ctypes import wintypes
 import datetime as dt
+import os
+from pathlib import Path
 import queue
 import threading
 import time
+import traceback
 import tkinter as tk
 from tkinter import ttk
 from ipc import request
@@ -12,6 +15,18 @@ from windows import foreground, perform_device
 
 HOTKEY_ID = 0x4C57  # Ctrl+Alt+L opens the learning-session start dialog
 GREEN, INK, MUTED, PAPER = '#207765', '#233346', '#687787', '#ffffff'
+LOG = Path(os.environ.get('PROGRAMDATA', r'C:\ProgramData')) / 'FokusWache' / 'agent.log'
+
+
+def log(message):
+    """Text-only diagnostics of the learning watcher (never image data, keys or window titles)."""
+    try:
+        if LOG.exists() and LOG.stat().st_size > 512 * 1024:
+            LOG.replace(LOG.with_suffix('.log.old'))
+        with LOG.open('a', encoding='utf-8') as f:
+            f.write(dt.datetime.now().isoformat(timespec='seconds') + ' ' + message.rstrip() + '\n')
+    except OSError:
+        pass
 
 
 def run_agent():
@@ -57,7 +72,11 @@ def run_agent():
         else:
             root.withdraw()
             executed.clear()
-        study.tick()
+        # The learning watcher must never stop the device-action countdown above.
+        try:
+            study.tick()
+        except Exception:
+            log('Lernmodus: ' + traceback.format_exc())
         while True:
             try:
                 job = ui.get_nowait()
@@ -66,7 +85,7 @@ def run_agent():
             try:
                 job()
             except Exception:
-                pass
+                log('Fensteraktion: ' + traceback.format_exc())
         root.after(500, display)
     study = StudyWatcher(root, state, ui)
     threading.Thread(target=observe, daemon=True).start()
@@ -78,6 +97,7 @@ def run_agent():
 def hotkey_loop(callback):
     user32 = ctypes.windll.user32
     if not user32.RegisterHotKey(None, HOTKEY_ID, 0x0001 | 0x0002 | 0x4000, ord('L')):  # Alt+Ctrl, no repeat
+        log('Tastenkürzel Strg+Alt+L nicht verfügbar (Fehler %d).' % ctypes.windll.kernel32.GetLastError())
         return
     msg = wintypes.MSG()
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
@@ -161,8 +181,15 @@ class Notice:
             self.window.update_idletasks()
             height = self.window.winfo_reqheight()
             self.window.geometry(f'{self.width}x{height}+{right - self.width - 24}+{bottom - height - 24}')
+        user32 = ctypes.windll.user32
+        previous = user32.GetForegroundWindow()
         self.window.deiconify()
         self.window.attributes('-topmost', True)
+        self.window.update_idletasks()
+        hwnd = root_hwnd(self.window)
+        # Tk activates a window it maps; hand the keyboard straight back to what the user was working in.
+        if previous and previous != hwnd and user32.GetForegroundWindow() == hwnd:
+            user32.SetForegroundWindow(previous)
         self.visible = True
 
     def hide(self):
@@ -191,6 +218,8 @@ class StudyWatcher:
             from watcher import Pace
             self.session, self.pace, self.failures = study['id'], Pace(), 0
             self.due = time.monotonic() + self.pace.next_delay()
+            log('Lernmodus erkannt; Aufpasser %s, erste Prüfung in %d s.' % (
+                'an' if self.state['vision_ready'] else 'aus (kein Schlüssel)', self.due - time.monotonic()))
             if not self.state['vision_ready']:
                 self.show_info('Lernmodus läuft', 'Der Aufpasser ist aus, weil noch kein API-Schlüssel hinterlegt ist. '
                                'Die Sperren gelten trotzdem.', 'Schlüssel: FokusWache → Browser & Schutz')
@@ -211,28 +240,33 @@ class StudyWatcher:
 
     # Runs on a worker thread; the image lives only inside this function.
     def check(self, sid, goal):
-        result = None
+        result, tokens = None, None
         try:
             from watcher import assess, capture, foreground_context
             config = request({'op': 'vision_config'})
             if config.get('key'):
                 jpeg = capture()
                 try:
-                    result = assess(config['key'], config['model'], goal, jpeg, foreground_context())
+                    result, tokens = assess(config['key'], config['model'], goal, jpeg, foreground_context())
                 finally:
                     del jpeg
         except Exception as error:
-            result, problem = None, str(error)[:160]
+            result, problem = None, type(error).__name__ + ': ' + str(error)[:160]
+            log('Prüfung fehlgeschlagen: ' + problem)
         else:
             problem = 'Keine eindeutige Antwort.'
-        self.ui.put(lambda: self.checked(sid, result, problem))
+            if result is None:
+                log('Prüfung ohne eindeutige Antwort.')
+        self.ui.put(lambda: self.checked(sid, result, problem, tokens))
 
-    def checked(self, sid, result, problem):
+    def checked(self, sid, result, problem, tokens=None):
         from watcher import is_drift
         self.busy = False
         if sid != self.session:
             return
         if result is None:
+            if tokens:
+                threading.Thread(target=self.report, args=(sid, None, '', tokens), daemon=True).start()
             self.failures += 1
             self.due = time.monotonic() + self.pace.next_delay(failed=True)
             if self.failures == 3:
@@ -241,18 +275,21 @@ class StudyWatcher:
             return
         self.failures = 0
         drift = is_drift(result)
-        if result['learning'] or drift:
+        counted = result['learning'] or drift
+        if counted:
             self.pace.record(not drift)
-            threading.Thread(target=self.report, args=(sid, not drift, result['place']), daemon=True).start()
+        threading.Thread(target=self.report, args=(sid, (not drift) if counted else None, result['place'], tokens), daemon=True).start()
         self.due = time.monotonic() + self.pace.next_delay()
+        log('Prüfung: %s (%s), nächste in %d s.' % ('abgedriftet' if drift else 'lernt' if result['learning'] else 'unsicher',
+                                                    result['confidence'], self.due - time.monotonic()))
         if drift:
             self.show_nudge(result)
 
-    def report(self, sid, on_task, place):
+    def report(self, sid, on_task, place, tokens=None):
         try:
-            request({'op': 'study_report', 'study': sid, 'on_task': on_task, 'place': place})
+            request({'op': 'study_report', 'study': sid, 'on_task': on_task, 'place': place, 'tokens': tokens})
         except Exception:
-            pass
+            log('Meldung an den Dienst fehlgeschlagen: ' + traceback.format_exc(limit=1))
 
     def show_nudge(self, result):
         if not self.nudge:
@@ -279,7 +316,7 @@ class StudyWatcher:
                  f"{s['drifts']}× abgedriftet bei {s['checks']} Prüfungen."]
         places = ', '.join(f'{k} ({v}×)' for k, v in sorted(s.get('places', {}).items(), key=lambda kv: -kv[1]))
         n.button('Schließen', lambda: n.hide(), primary=True)
-        n.show('\n'.join(lines), ('Wohin: ' + places + '\n' if places else '') + 'Ziel: ' + s['goal'])
+        n.show('\n'.join(lines), 'Wohin: ' + places if places else '')
         threading.Thread(target=lambda: request({'op': 'study_ack', 'id': s['id']}), daemon=True).start()
 
     def open_start(self):

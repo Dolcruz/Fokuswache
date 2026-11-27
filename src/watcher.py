@@ -131,8 +131,19 @@ def foreground_context():
         return 'Vordergrundprogramm: unbekannt'
 
 
+def usage_of(response):
+    usage = getattr(response, 'usage', None)
+    tokens_in = sum(int(getattr(usage, k, 0) or 0) for k in ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'))
+    return {'in': tokens_in, 'out': int(getattr(usage, 'output_tokens', 0) or 0)}
+
+
 def assess(key, model, goal, jpeg, context, client_factory=None):
-    """One vision call. Returns the parsed result, or None when the answer cannot be trusted."""
+    """One vision call. Returns (parsed result or None when the answer cannot be trusted, token usage)."""
+    response = request_assessment(key, model, goal, jpeg, context, client_factory)
+    return parse(response), usage_of(response)
+
+
+def request_assessment(key, model, goal, jpeg, context, client_factory=None):
     import anthropic
     client = (client_factory or anthropic.Anthropic)(api_key=key, max_retries=2, timeout=90.0)
     content = [
@@ -151,6 +162,10 @@ def assess(key, model, goal, jpeg, context, client_factory=None):
             response = None  # fallback option not accepted for this request: ask without it
     if response is None:
         response = client.messages.create(**params)
+    return response
+
+
+def parse(response):
     if response.stop_reason != 'end_turn':
         return None  # refusal or truncation: unknown, never counted as drifting
     text = next((b.text for b in response.content if b.type == 'text'), '')

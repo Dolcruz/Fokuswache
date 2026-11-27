@@ -208,12 +208,19 @@ class Engine:
                                'checks': 0, 'drifts': 0, 'places': {}, 'stop_requested': None}
         return self.state['study']
 
-    def study_report(self, on_task, place, now):
+    def study_report(self, on_task, place, now, tokens=None):
         s = self.study(now)
         if not s:
             raise ValueError('Kein Lernmodus aktiv.')
-        if type(on_task) is not bool:
+        if on_task is not None and type(on_task) is not bool:
             raise ValueError('Ungültige Auswertung.')
+        if isinstance(tokens, dict):
+            for k in ('in', 'out'):
+                v = tokens.get(k)
+                if type(v) is int and 0 <= v < 1_000_000:
+                    s.setdefault('tokens', {'in': 0, 'out': 0})[k] += v
+        if on_task is None:
+            return  # unanswered check: only its token use is kept
         s['checks'] += 1
         if not on_task:
             s['drifts'] += 1
@@ -253,9 +260,11 @@ class Engine:
     def study_finish(self, end, early):
         s = self.state.pop('study')
         started = timestamp(s['started'])
-        summary = {'id': s['id'], 'goal': s['goal'], 'started': s['started'], 'ended': end.isoformat(),
+        # Only the short statistics outlive the session; the goal sentence is dropped.
+        summary = {'id': s['id'], 'started': s['started'], 'ended': end.isoformat(),
                    'planned_minutes': s['minutes'], 'minutes': round(max(0, (end - started).total_seconds()) / 60, 1),
-                   'checks': s['checks'], 'drifts': s['drifts'], 'places': s['places'], 'early': early, 'shown': False}
+                   'checks': s['checks'], 'drifts': s['drifts'], 'places': s['places'],
+                   'tokens': s.get('tokens', {'in': 0, 'out': 0}), 'early': early, 'shown': False}
         history = self.state.setdefault('study_history', [])
         history.append(summary)
         del history[:-100]
