@@ -395,6 +395,8 @@ class StudyUiTests(unittest.TestCase):
                   'vision_ready': True, 'vision_model': 'claude-opus-5-5'}
         window.render(status)
         self.assertTrue(window.study_banner.isVisibleTo(window))
+        self.assertIn('IPI 9.2', window.study_banner.text.text())
+        self.assertNotIn('<', window.study_banner.text.text())  # plain-text labels show markup literally
         self.assertFalse(window.study_button.isEnabled())
         stop = StudyStop(window)
         self.assertFalse(stop.request_button.isEnabled())

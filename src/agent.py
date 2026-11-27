@@ -40,6 +40,13 @@ def run_agent():
         return
     root = tk.Tk()
     root.withdraw()
+    try:
+        # The app's own icon for every window of this process instead of the Tk feather.
+        import sys
+        base = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
+        root.iconbitmap(default=str(base / 'FokusWache.ico'))
+    except Exception:
+        pass
     root.title('FokusWache – Geräteaktion')
     root.geometry('510x210')
     root.attributes('-topmost', True)

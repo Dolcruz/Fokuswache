@@ -184,8 +184,9 @@ class StudyBanner(QFrame):
         if study:
             left = int(study['remaining'] // 60)
             self.setStyleSheet('QFrame#card { background: #fdf6e8; border: 1px solid #ecd9b2; }')
-            self.text.setText(f"<b>Lernmodus läuft</b> bis {clock(study['until'])} · noch {left} min"
-                              f"<br>{study['goal']}" + (f" · {study['drifts']}× abgedriftet" if study['drifts'] else ''))
+            # Labels are plain text on purpose (the goal is user input), so no markup here.
+            self.text.setText(f"Lernmodus läuft bis {clock(study['until'])} · noch {left} min"
+                              f"\n{study['goal']}" + (f" · {study['drifts']}× abgedriftet" if study['drifts'] else ''))
             self.stop_button.setVisible(True)
             self.stop_button.setEnabled(self.app.connected)
             self.setVisible(True)
