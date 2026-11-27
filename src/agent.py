@@ -326,7 +326,9 @@ class StudyWatcher:
 
     # Runs on the Tk thread every 500 ms.
     def tick(self):
-        study = self.state['study'] if self.state['connected'] else None
+        if not self.state['connected']:
+            return  # a missed poll says nothing about the session; keep notice, pace and timing
+        study = self.state['study']
         if study and study['id'] != self.session:
             from watcher import Pace
             self.session, self.pace, self.failures = study['id'], Pace(), 0
