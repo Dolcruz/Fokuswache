@@ -139,7 +139,7 @@ class Companion:
     """The pixel watchdog sitting in a corner during a learning session; its face shows how it is going."""
     KEY = '#010203'  # transparent colour: only the figure itself is visible and clickable
 
-    def __init__(self, root, scale=5):
+    def __init__(self, root, scale=3):
         self.scale = scale
         self.window = w = tk.Toplevel(root)
         w.withdraw()
@@ -395,7 +395,7 @@ class StudyWatcher:
 
     def show_nudge(self, result):
         if not self.nudge:
-            self.nudge = Notice(self.root, '', accent='#c2410c', width=640, strong=True, figure=7)
+            self.nudge = Notice(self.root, '', accent='#c2410c', width=660, strong=True, figure=4)
             self.nudge.button('Zurück zum Lernen', lambda: self.nudge.hide(), primary=True)
         goal = (self.state.get('study') or {}).get('goal', '')
         again = bool(self.pace) and self.pace.drift_streak >= 2
@@ -413,7 +413,7 @@ class StudyWatcher:
     def show_summary(self, s):
         if self.summary_window:
             self.summary_window.hide()
-        n = Notice(self.root, 'Lernmodus beendet' + (' (vorzeitig)' if s.get('early') else ''), width=480, figure=5)
+        n = Notice(self.root, 'Lernmodus beendet' + (' (vorzeitig)' if s.get('early') else ''), width=500, figure=3)
         self.summary_window = n
         minutes = int(round(s['minutes']))
         lines = [f"{minutes} Minuten gelernt (geplant {s['planned_minutes']}).",
