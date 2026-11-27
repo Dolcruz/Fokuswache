@@ -274,15 +274,17 @@ class WatcherTests(unittest.TestCase):
         bad = self.fake_client(self.response({'learning': 'yes', 'confidence': 'hoch', 'place': '', 'message': ''}))
         self.assertIsNone(watcher.assess('k', 'claude-haiku-5-5', 'x', b'j', 'c', bad)[0])
 
-    def test_capture_stays_in_memory(self):
+    def test_capture_stays_in_memory_and_keeps_several_screens_readable(self):
         from PIL import Image
-        big = Image.new('RGB', (3840, 2160), 'white')
-        with patch('PIL.ImageGrab.grab', return_value=big), patch('watcher.foreground_monitor', return_value=((0, 0, 3840, 2160), (0, 0, 3840, 2100))), \
-             patch('builtins.open', side_effect=AssertionError('no file access')):
-            jpeg = watcher.capture()
-        self.assertTrue(jpeg.startswith(b'\xff\xd8'))
         import io
-        self.assertEqual(max(Image.open(io.BytesIO(jpeg)).size), watcher.MAX_EDGE)
+        for size, edge in (((3840, 2160), watcher.MAX_EDGE), ((7040, 1821), watcher.MAX_EDGE_WIDE)):
+            with self.subTest(size=size), patch('PIL.ImageGrab.grab', return_value=Image.new('RGB', size, 'white')) as grab, \
+                 patch('builtins.open', side_effect=AssertionError('no file access')):
+                jpeg = watcher.capture()
+            self.assertTrue(grab.call_args.kwargs['all_screens'])
+            self.assertNotIn('bbox', grab.call_args.kwargs)
+            self.assertTrue(jpeg.startswith(b'\xff\xd8'))
+            self.assertEqual(max(Image.open(io.BytesIO(jpeg)).size), edge)
 
 
 class LoginTests(unittest.TestCase):

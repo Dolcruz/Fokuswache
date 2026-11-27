@@ -13,13 +13,14 @@ import os
 from pathlib import Path
 import random
 
-MAX_EDGE = 1568
+MAX_EDGE = 1568        # one screen
+MAX_EDGE_WIDE = 2576   # several screens side by side in one picture
 SYSTEM_PROMPT = """Du bist der Lern-Aufpasser von FokusWache. Du bekommst einen Screenshot vom Bildschirm einer Person, \
-die gerade lernen möchte, und ihr eigenes Lernziel in einem Satz. Beurteile nur, ob sie in diesem Moment an diesem Ziel arbeitet.
+die gerade lernen möchte, und ihr eigenes Lernziel in einem Satz. Hat sie mehrere Bildschirme, zeigt das Bild alle nebeneinander. Beurteile nur, ob sie in diesem Moment an diesem Ziel arbeitet.
 
 Als Lernen zählt alles, was plausibel zum Ziel gehört: Skript, Folien oder PDF lesen, Übungsblätter, Lerntrainer, Quiz, \
 Code-Editor oder Terminal, Notizen, Suche, Dokumentation, Wikipedia oder ein KI-Chat zum Thema, Dateien öffnen, Fenster sortieren. \
-Ein Musikplayer oder eine Uhr nebenbei ist kein Abdriften. Im Zweifel gilt: lernt.
+Ein Musikplayer oder eine Uhr nebenbei ist kein Abdriften. Auf einem Nebenbildschirm zählt nur, was dort erkennbar gerade läuft oder benutzt wird (Video, Stream, Spiel, Feed); ein bloß offenes, ruhendes Fenster wie eine Chatliste, ein Postfach oder ein anderes Programm zählt nicht. Im Zweifel gilt: lernt.
 
 Abgedriftet ist, wer gerade sichtbar etwas ohne Bezug zum Ziel tut: Videos, Streams, Serien, Social Media, Messenger-Chats, \
 News, Shopping, Spiele, Foren oder Webseiten zu anderen Themen.
@@ -104,18 +105,18 @@ def foreground_monitor():
 
 
 def capture():
-    """JPEG bytes of the active monitor, scaled down, held only in memory."""
+    """JPEG bytes of the whole desktop (all screens in one picture), scaled down, held only in memory."""
     from PIL import Image, ImageGrab
     user32 = ctypes.windll.user32
     previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # per-monitor v2 for physical pixels
     try:
-        bbox, _ = foreground_monitor()
-        image = ImageGrab.grab(bbox=bbox, all_screens=True)
+        image = ImageGrab.grab(all_screens=True)
     finally:
         if previous:
             user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(previous))
     image = image.convert('RGB')
-    image.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
+    edge = MAX_EDGE_WIDE if image.width > 2.2 * image.height else MAX_EDGE
+    image.thumbnail((edge, edge), Image.LANCZOS)
     buffer = io.BytesIO()
     image.save(buffer, 'JPEG', quality=72, optimize=True)
     image.close()
